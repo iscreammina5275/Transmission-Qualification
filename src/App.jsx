@@ -4,8 +4,7 @@ import { ref, onValue, update } from "firebase/database";
 
 // ─── 상태 옵션 ────────────────────────────────────────────
 const DEV_STATUS_OPTIONS = [
-  "진행예정","기획필요","기획중","기획전달예정","개발필요","개발중",
-  "테스트","외부 문의 중","확인필요","서류 작성중","소명예정","소명","증빙필요","완료"
+  "기획중","개발중","소명예정","개발완료","심사자료 완료","외부 문의중","-"
 ];
 const EXT_STATUS_OPTIONS = ["미문의","답변대기","긍정회신","리스크","완료"];
 const DOC_STATUS_OPTIONS = ["수급예정","수정필요","소명예정","증빙필요","외부문의","리스크","-","완료"];
@@ -13,27 +12,27 @@ const OWNER_OPTIONS = ["기획","개발","기획+개발","개발+기획","기획
 
 // ─── 기본 데이터 ──────────────────────────────────────────
 const BASE_DEV_P0 = [
-  { id:"DEV-01", name:"발신번호 등록·변경·삭제 이력 관리 시스템", owner:"기획+개발", status:"기획필요", note:"FAQ Q19 핵심 — 시스템적으로 통제 필수" },
-  { id:"DEV-02", name:"계정별 발신번호 회선수 자동 카운팅·초과 제한", owner:"개발", status:"개발필요", note:"DEV-03과 연계 설계 필요" },
-  { id:"DEV-03", name:"초과 등록 보류 처리·관리자 승인 흐름", owner:"개발", status:"개발필요", note:"DEV-02와 연계 설계 필요" },
-  { id:"DEV-24", name:"KTOA 이용증명원 실시간 검증 연동", owner:"기획+개발", status:"기획필요", note:"Swagger 원문 확인 선행 필요 — 외부 문의 아직 미진행", risk:true },
-  { id:"DEV-08", name:"금칙어·악성URL·차단전화번호 자동 차단체계", owner:"개발", status:"기획필요", note:"자체 구축 방향 즉시 결정 필요", risk:true },
-  { id:"DEV-09", name:"차단/보류 발생 시 이용자 안내 팝업", owner:"기획+개발", status:"기획필요", note:"DEV-08 확정 후 화면 설계 가능" },
-  { id:"DEV-10", name:"금칙어 관리 리스트 & 주기적 업데이트 체계", owner:"기획+개발", status:"기획필요", note:"KISA 연동 또는 자체 리스트 방향 결정 필요" },
-  { id:"DEV-19", name:"문자 발송 시 추가인증(발신번호 확인) 팝업", owner:"개발", status:"기획전달예정", note:"심사기관 6/18 문의 — 진입 인증 인정 여부 회신 대기" },
-  { id:"DEV-12", name:"역할별 접근권한 설계 (RBAC) + 계정별 이력", owner:"기획+개발", status:"개발필요", note:"발신번호 사용관리 권한 변경 이력 저장 포함" },
+  { id:"DEV-01", name:"발신번호 등록·변경·삭제 이력 관리 시스템", owner:"기획+개발", status:"기획중", note:"FAQ Q19 핵심 — 시스템적으로 통제 필수" },
+  { id:"DEV-02", name:"계정별 발신번호 회선수 자동 카운팅·초과 제한", owner:"개발", status:"기획중", note:"DEV-03과 연계 설계 필요" },
+  { id:"DEV-03", name:"초과 등록 보류 처리·관리자 승인 흐름", owner:"개발", status:"기획중", note:"DEV-02와 연계 설계 필요" },
+  { id:"DEV-24", name:"KTOA 이용증명원 실시간 검증 연동", owner:"기획+개발", status:"외부 문의중", note:"Swagger 원문 확인 선행 필요 — 외부 문의 아직 미진행", risk:true },
+  { id:"DEV-08", name:"금칙어·악성URL·차단전화번호 자동 차단체계", owner:"개발", status:"기획중", note:"자체 구축 방향 즉시 결정 필요", risk:true },
+  { id:"DEV-09", name:"차단/보류 발생 시 이용자 안내 팝업", owner:"기획+개발", status:"기획중", note:"DEV-08 확정 후 화면 설계 가능" },
+  { id:"DEV-10", name:"금칙어 관리 리스트 & 주기적 업데이트 체계", owner:"기획+개발", status:"기획중", note:"KISA 연동 또는 자체 리스트 방향 결정 필요" },
+  { id:"DEV-19", name:"문자 발송 시 추가인증(발신번호 확인) 팝업", owner:"개발", status:"기획중", note:"심사기관 6/18 문의 — 진입 인증 인정 여부 회신 대기" },
+  { id:"DEV-12", name:"역할별 접근권한 설계 (RBAC) + 계정별 이력", owner:"기획+개발", status:"기획중", note:"발신번호 사용관리 권한 변경 이력 저장 포함" },
 ];
 const BASE_DEV_P1 = [
   { id:"DEV-04", name:"문자발송 API 진입점 국외 IP 차단 미들웨어", owner:"개발", status:"소명예정", note:"Azure/Imperva 설정 캡처 증적 준비" },
   { id:"DEV-05", name:"국외 IP 예외 허용 관리자 승인 기능", owner:"개발", status:"소명예정", note:"예외 정책 자체를 운영 안 하는 방향으로 소명" },
   { id:"DEV-06", name:"VPN·프록시 우회접속 탐지 조치", owner:"개발", status:"소명예정", note:"Imperva/Penta WAF 활용 여부 확인" },
-  { id:"DEV-17", name:"인사이동·퇴직 시 권한 즉시 회수 프로세스", owner:"개발", status:"개발필요", note:"학교알리미 교직원 삭제 연동 증빙" },
-  { id:"DEV-20", name:"이용자 접속·발송·결제 로그 저장체계", owner:"개발", status:"개발필요", note:"최소 1년 이상 보관 요건(FAQ Q63)" },
-  { id:"DEV-21", name:"관리자 접속·개인정보 조회 시스템 로그", owner:"개발", status:"개발필요", note:"현행 확인 후 누락 항목 개발" },
+  { id:"DEV-17", name:"인사이동·퇴직 시 권한 즉시 회수 프로세스", owner:"개발", status:"기획중", note:"학교알리미 교직원 삭제 연동 증빙" },
+  { id:"DEV-20", name:"이용자 접속·발송·결제 로그 저장체계", owner:"개발", status:"기획중", note:"최소 1년 이상 보관 요건(FAQ Q63)" },
+  { id:"DEV-21", name:"관리자 접속·개인정보 조회 시스템 로그", owner:"개발", status:"기획중", note:"현행 확인 후 누락 항목 개발" },
 ];
 const BASE_DEV_P2 = [
   { id:"DEV-11", name:"회원가입 본인확인·1인 1계정 중복 차단", owner:"개발", status:"소명예정", note:"6/22 회신: 중복가입 차단 절차 소명 가능성 확인" },
-  { id:"DEV-13", name:"약관 동의 화면·이력 시스템 저장", owner:"기획", status:"증빙필요", note:"동의 이력 저장 여부 개발 확인 필요" },
+  { id:"DEV-13", name:"약관 동의 화면·이력 시스템 저장", owner:"기획", status:"심사자료 완료", note:"동의 이력 저장 여부 개발 확인 필요" },
   { id:"DEV-14", name:"이용료 계정별 귀속·명의 불일치 보류", owner:"개발", status:"소명예정", note:"학교단위 계약 구조로 소명 가능 여부 확인" },
   { id:"DEV-27", name:"세션 내 재인증 기준 정책 및 시스템 반영", owner:"개발+기획", status:"소명예정", note:"대량발송 사유 입력 → 재인증 수단 아닌 사후 추적 근거로 정리" },
   { id:"DEV-28", name:"API·모듈 발송 기업관리자 사후승인 체계", owner:"개발", status:"소명예정", note:"직접 API 발송 아님 소명 가능 여부 확인" },
@@ -67,16 +66,13 @@ const BASE_DOCS_REREG = [
 
 // ─── 스타일 맵 ────────────────────────────────────────────
 const STATUS_STYLE = {
-  "기획필요":"bg-red-100 text-red-700", "개발필요":"bg-red-100 text-red-700",
-  "기획전달예정":"bg-amber-100 text-amber-700", "소명예정":"bg-blue-100 text-blue-700",
-  "증빙필요":"bg-violet-100 text-violet-700", "완료":"bg-emerald-100 text-emerald-700",
-  "개발중":"bg-indigo-100 text-indigo-700", "테스트":"bg-cyan-100 text-cyan-700",
-  "서류 작성중":"bg-teal-100 text-teal-700",
-  "진행예정":"bg-slate-100 text-slate-600",
-  "기획중":"bg-yellow-100 text-yellow-700",
-  "외부 문의 중":"bg-orange-100 text-orange-700",
-  "확인필요":"bg-pink-100 text-pink-700",
-  "소명":"bg-blue-100 text-blue-700",
+  "기획중":        "bg-yellow-100 text-yellow-700",
+  "개발중":        "bg-indigo-100 text-indigo-700",
+  "소명예정":      "bg-blue-100 text-blue-700",
+  "개발완료":      "bg-emerald-100 text-emerald-700",
+  "심사자료 완료": "bg-teal-100 text-teal-700",
+  "외부 문의중":   "bg-orange-100 text-orange-700",
+  "-":             "bg-slate-100 text-slate-400",
 };
 const DOC_STATUS_STYLE = {
   "수급예정":"bg-slate-100 text-slate-500", "수정필요":"bg-amber-100 text-amber-700",
