@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { db, isConfigured } from "./firebase";
 import { ref, onValue, update } from "firebase/database";
 
@@ -20,7 +20,8 @@ const BASE_DEV_P0 = [
   { id:"DEV-09", name:"차단/보류 발생 시 이용자 안내 팝업", owner:"기획+개발", status:"기획중", note:"DEV-08 확정 후 화면 설계 가능" },
   { id:"DEV-10", name:"금칙어 관리 리스트 & 주기적 업데이트 체계", owner:"기획+개발", status:"기획중", note:"KISA 연동 또는 자체 리스트 방향 결정 필요" },
   { id:"DEV-19", name:"문자 발송 시 추가인증(발신번호 확인) 팝업", owner:"개발", status:"기획중", note:"심사기관 6/18 문의 — 진입 인증 인정 여부 회신 대기" },
-  { id:"DEV-12", name:"역할별 접근권한 설계 (RBAC) + 계정별 이력", owner:"기획+개발", status:"기획중", note:"발신번호 사용관리 권한 변경 이력 저장 포함" },
+  { id:"DEV-12", name:"역할별 접근권한 설계 (RBAC) + 계정별 이력", owner:"기획+개발", status:"기획중", note:"발신번호 사용관리 권한 변경 이력 저장 포함 / DEV-16과 연계 설계" },
+  { id:"DEV-16", name:"계정별 발신번호 권한 부여 및 접근제어 시스템 구현", owner:"기획+개발", status:"기획중", note:"7/1 추가 — 임직원별 계정 부여 및 사용 가능한 발신번호 권한 관리 / 문자 서비스 이용 관련 권한 부여 최소 신규 개발 필요", risk:true },
 ];
 const BASE_DEV_P1 = [
   { id:"DEV-04", name:"문자발송 API 진입점 국외 IP 차단 미들웨어", owner:"개발", status:"소명예정", note:"Azure/Imperva 설정 캡처 증적 준비" },
@@ -36,11 +37,15 @@ const BASE_DEV_P2 = [
   { id:"DEV-14", name:"이용료 계정별 귀속·명의 불일치 보류", owner:"개발", status:"소명예정", note:"학교단위 계약 구조로 소명 가능 여부 확인" },
   { id:"DEV-27", name:"세션 내 재인증 기준 정책 및 시스템 반영", owner:"개발+기획", status:"소명예정", note:"대량발송 사유 입력 → 재인증 수단 아닌 사후 추적 근거로 정리" },
   { id:"DEV-28", name:"API·모듈 발송 기업관리자 사후승인 체계", owner:"개발", status:"소명예정", note:"직접 API 발송 아님 소명 가능 여부 확인" },
+  { id:"DEV-18-a", name:"로그인 단계 다중 인증 수단 구현 (SMS OTP 등, KMC 연동)", owner:"개발", status:"소명예정", note:"3.4 다중인증(MFA) — KMC 본인인증 + 간편비밀번호 = 다중인증 수단으로 인정 가능성 확인 / KISA 답변 완료" },
+  { id:"DEV-18-b", name:"로그인 실패 횟수 제한·경고·잠금 처리 구현", owner:"개발", status:"소명예정", note:"간편비밀번호 5회 실패 이용제한 적용 중 → 10회 실패 시 본인인증 후 잠금 해제 정책 운영 / KISA 답변 완료" },
+  { id:"DEV-18-c", name:"인증수단 등록·변경·재설정 시 재본인확인 절차 구현", owner:"개발", status:"소명예정", note:"인증기간 만료 시 재인증 후 재설정 프로세스 존재 여부 확인 / KISA 답변 완료" },
+  { id:"DEV-18-d", name:"소셜계정 로그인 연계 시 별도 본인확인 연동 확인", owner:"개발", status:"소명예정", note:"로그인 수단과 무관하게 문자 서비스 진입 시 본인인증 받고 있음 / 하이클래스 회원가입 단계에서 본인인증 없음 필수여부 확인 필요 / KISA 답변 완료" },
 ];
 const BASE_EXTERNAL = [
-  { id:"EXT-01", name:"문자 진입 본인인증 → 회원가입 대체 소명", target:"심사기관", status:"답변대기", note:"6/18 문의완료 / 중복탐지 절차 소명 필요", risk:false },
-  { id:"EXT-02", name:"간편비밀번호 = 다중인증 수단 인정 여부", target:"심사기관", status:"긍정회신", note:"6/22 회신: 인정 가능성 있다고 답변", risk:false },
-  { id:"EXT-03", name:"진입 인증 → 문자 발송 추가인증 인정 여부", target:"심사기관", status:"답변대기", note:"6/18 문의완료 / 회신 확인 필요", risk:false },
+  { id:"EXT-01", name:"문자 진입 본인인증 → 회원가입 대체 소명", target:"심사기관", status:"답변대기", note:"6/18 문의완료 / 중복탐지 절차 소명 필요" },
+  { id:"EXT-02", name:"간편비밀번호 = 다중인증 수단 인정 여부", target:"심사기관", status:"긍정회신", note:"6/22 회신: 인정 가능성 있다고 답변" },
+  { id:"EXT-03", name:"진입 인증 → 문자 발송 추가인증 인정 여부", target:"심사기관", status:"답변대기", note:"6/18 문의완료 / 회신 확인 필요" },
   { id:"EXT-04", name:"메시지허브 X-ray 차단체계로 자체 증빙 대체 가능 여부", target:"메시지허브", status:"리스크", note:"구축 일정 없음 회신 → P0 금칙어 항목 전체 영향", risk:true },
   { id:"EXT-05", name:"KTOA API 연동 방식·응답규격·Rate Limit 확인", target:"KTOA", status:"미문의", note:"외부 문의 즉시 필요 / Swagger 원문 미확인", risk:true },
 ];
@@ -90,7 +95,7 @@ const EXT_STATUS_STYLE = {
 const LS_KEY = "wbs_state_v3";
 function loadState() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch { return {}; } }
 
-// ─── 외부 컴포넌트 (App 밖에 정의 → 재렌더시 포커스 유지) ─
+// ─── 외부 컴포넌트 ────────────────────────────────────────
 function StatusSelect({ value, options, styleMap, onChange }) {
   return (
     <select
@@ -107,33 +112,17 @@ function StatusSelect({ value, options, styleMap, onChange }) {
 function EditInline({ editForm, setEditForm, onSave, onCancel, showOwner = true, showDue = false, showTarget = false }) {
   return (
     <div className="flex-1 space-y-1.5 py-0.5">
-      <input
-        value={editForm.name}
-        onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
-        placeholder="항목명"
-        className="w-full text-sm border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
-      />
-      <input
-        value={editForm.note}
-        onChange={e => setEditForm(p => ({ ...p, note: e.target.value }))}
-        placeholder="비고"
-        className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
-      />
+      <input value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
+        placeholder="항목명" className="w-full text-sm border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400" />
+      <input value={editForm.note} onChange={e => setEditForm(p => ({ ...p, note: e.target.value }))}
+        placeholder="비고" className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400" />
       {(showOwner || showTarget) && (
-        <input
-          value={editForm.owner}
-          onChange={e => setEditForm(p => ({ ...p, owner: e.target.value }))}
-          placeholder={showTarget ? "확인 대상" : "담당자"}
-          className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
-        />
+        <input value={editForm.owner} onChange={e => setEditForm(p => ({ ...p, owner: e.target.value }))}
+          placeholder={showTarget ? "확인 대상" : "담당자"} className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400" />
       )}
       {showDue && (
-        <input
-          value={editForm.due}
-          onChange={e => setEditForm(p => ({ ...p, due: e.target.value }))}
-          placeholder="마감일 (예: 7/14)"
-          className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
-        />
+        <input value={editForm.due} onChange={e => setEditForm(p => ({ ...p, due: e.target.value }))}
+          placeholder="마감일 (예: 7/14)" className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400" />
       )}
       <div className="flex gap-1.5 pt-0.5">
         <button onClick={onSave} className="text-xs bg-slate-900 text-white px-3 py-1 rounded">저장</button>
@@ -146,10 +135,8 @@ function EditInline({ editForm, setEditForm, onSave, onCancel, showOwner = true,
 function AddForm({ section, options, showOwner = true, showDue = false, showTarget = false, addingTo, setAddingTo, newItem, setNewItem, onAdd }) {
   if (addingTo !== section) {
     return (
-      <button
-        onClick={() => setAddingTo(section)}
-        className="mt-3 w-full text-xs text-slate-400 border border-dashed border-slate-300 rounded-lg py-2.5 hover:bg-slate-50 hover:text-slate-600 transition-colors"
-      >
+      <button onClick={() => setAddingTo(section)}
+        className="mt-3 w-full text-xs text-slate-400 border border-dashed border-slate-300 rounded-lg py-2.5 hover:bg-slate-50 hover:text-slate-600 transition-colors">
         + 항목 추가
       </button>
     );
@@ -171,7 +158,7 @@ function AddForm({ section, options, showOwner = true, showDue = false, showTarg
           placeholder="비고" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none col-span-2" />
       </div>
       <div className="flex gap-2 items-center">
-        <select value={newItem.status || (section.startsWith("doc") ? "수급예정" : "기획필요")}
+        <select value={newItem.status || (section.startsWith("doc") ? "수급예정" : "기획중")}
           onChange={e => setNewItem(p => ({ ...p, status: e.target.value }))}
           className="text-xs border border-slate-300 rounded px-2 py-1">
           {options.map(o => <option key={o} value={o}>{o}</option>)}
@@ -180,6 +167,15 @@ function AddForm({ section, options, showOwner = true, showDue = false, showTarg
         <button onClick={() => { setAddingTo(null); setNewItem({}); }} className="text-xs bg-slate-100 text-slate-600 px-2 py-1.5 rounded">취소</button>
       </div>
     </div>
+  );
+}
+
+// ─── 드래그 핸들 아이콘 ───────────────────────────────────
+function DragHandle() {
+  return (
+    <span className="text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing select-none text-xs shrink-0 px-0.5" title="드래그하여 순서 변경">
+      ⠿
+    </span>
   );
 }
 
@@ -211,9 +207,10 @@ export default function App() {
     ...(saved.docReregStatuses || {})
   });
 
-  const [taskDone, setTaskDone] = useState(saved.taskDone || {});
-  const [extDone, setExtDone] = useState(saved.extDone || {});
-  const [docDone, setDocDone] = useState(saved.docDone || {});
+  const [taskDone, setTaskDone]   = useState(saved.taskDone || {});
+  const [extDone, setExtDone]     = useState(saved.extDone || {});
+  const [docDone, setDocDone]     = useState(saved.docDone || {});
+  const [orders, setOrders]       = useState(saved.orders || {});
 
   const [memos, setMemos] = useState({
     dev: "", ext: "", docs: "",
@@ -230,15 +227,21 @@ export default function App() {
   });
 
   // UI 상태
-  const [memoEdit, setMemoEdit] = useState(false);
-  const [memoTemp, setMemoTemp] = useState("");
+  const [memoEdit, setMemoEdit]           = useState(false);
+  const [memoTemp, setMemoTemp]           = useState("");
   const [extActionEdit, setExtActionEdit] = useState(false);
   const [extActionTemp, setExtActionTemp] = useState("");
-  const [editingKey, setEditingKey] = useState(null);
-  const [editForm, setEditForm] = useState({ name: "", note: "", owner: "", due: "" });
-  const [addingTo, setAddingTo] = useState(null);
-  const [newItem, setNewItem] = useState({});
-  const [fbStatus, setFbStatus] = useState(isConfigured ? "연결 중..." : "로컬저장");
+  const [editingKey, setEditingKey]       = useState(null);
+  const [editForm, setEditForm]           = useState({ name: "", note: "", owner: "", due: "" });
+  const [addingTo, setAddingTo]           = useState(null);
+  const [newItem, setNewItem]             = useState({});
+  const [fbStatus, setFbStatus]           = useState(isConfigured ? "연결 중..." : "로컬저장");
+  const [draggingKey, setDraggingKey]     = useState(null);
+  const [dragOverKey, setDragOverKey]     = useState(null);
+
+  // 드래그 refs
+  const dragItem     = useRef(null);
+  const dragOverItem = useRef(null);
 
   // Firebase 리스너
   useEffect(() => {
@@ -248,33 +251,35 @@ export default function App() {
       setFbStatus("실시간 연결됨 ✓");
       if (!snap.exists()) return;
       const d = snap.val();
-      if (d.devOwners) setDevOwners(p => ({ ...p, ...d.devOwners }));
-      if (d.devStatuses) setDevStatuses(p => ({ ...p, ...d.devStatuses }));
-      if (d.extStatuses) setExtStatuses(p => ({ ...p, ...d.extStatuses }));
+      if (d.devOwners)       setDevOwners(p => ({ ...p, ...d.devOwners }));
+      if (d.devStatuses)     setDevStatuses(p => ({ ...p, ...d.devStatuses }));
+      if (d.extStatuses)     setExtStatuses(p => ({ ...p, ...d.extStatuses }));
       if (d.docCertStatuses) setDocCertStatuses(p => ({ ...p, ...d.docCertStatuses }));
-      if (d.docReregStatuses) setDocReregStatuses(p => ({ ...p, ...d.docReregStatuses }));
+      if (d.docReregStatuses)setDocReregStatuses(p => ({ ...p, ...d.docReregStatuses }));
       if (d.taskDone !== undefined) setTaskDone(d.taskDone || {});
-      if (d.extDone !== undefined) setExtDone(d.extDone || {});
-      if (d.docDone !== undefined) setDocDone(d.docDone || {});
-      if (d.memos) setMemos(p => ({ ...p, ...d.memos }));
-      if (d.custom) setCustom(p => ({ devP0: {}, devP1: {}, devP2: {}, ext: {}, docCert: {}, docRereg: {}, ...p, ...d.custom }));
-      if (d.edits) setEdits(p => ({ devP0: {}, devP1: {}, devP2: {}, ext: {}, docCert: {}, docRereg: {}, ...p, ...d.edits }));
+      if (d.extDone  !== undefined) setExtDone(d.extDone || {});
+      if (d.docDone  !== undefined) setDocDone(d.docDone || {});
+      if (d.orders)          setOrders(p => ({ ...p, ...d.orders }));
+      if (d.memos)           setMemos(p => ({ ...p, ...d.memos }));
+      if (d.custom)          setCustom(p => ({ devP0:{}, devP1:{}, devP2:{}, ext:{}, docCert:{}, docRereg:{}, ...p, ...d.custom }));
+      if (d.edits)           setEdits(p => ({ devP0:{}, devP1:{}, devP2:{}, ext:{}, docCert:{}, docRereg:{}, ...p, ...d.edits }));
     }, () => setFbStatus("연결 오류"));
     return () => unsub();
   }, []);
 
   const persist = (updates) => {
-    const full = { devOwners, devStatuses, extStatuses, docCertStatuses, docReregStatuses, taskDone, extDone, docDone, memos, custom, edits, ...updates };
+    const full = { devOwners, devStatuses, extStatuses, docCertStatuses, docReregStatuses,
+                   taskDone, extDone, docDone, orders, memos, custom, edits, ...updates };
     localStorage.setItem(LS_KEY, JSON.stringify(full));
     if (isConfigured && db) update(ref(db, "wbs"), updates).catch(console.error);
   };
 
-  // 핸들러
-  const updDevOwner     = (id, v) => { const n = { ...devOwners, [id]: v };           setDevOwners(n);          persist({ devOwners: n }); };
-  const updDevStatus    = (id, v) => { const n = { ...devStatuses, [id]: v };         setDevStatuses(n);        persist({ devStatuses: n }); };
-  const updExtStatus    = (id, v) => { const n = { ...extStatuses, [id]: v };         setExtStatuses(n);        persist({ extStatuses: n }); };
-  const updDocCert      = (i, v) =>  { const n = { ...docCertStatuses, [String(i)]: v }; setDocCertStatuses(n); persist({ docCertStatuses: n }); };
-  const updDocRereg     = (i, v) =>  { const n = { ...docReregStatuses, [String(i)]: v }; setDocReregStatuses(n); persist({ docReregStatuses: n }); };
+  // ─── 핸들러 ─────────────────────────────────────────────
+  const updDevOwner  = (id, v) => { const n = { ...devOwners,  [id]: v }; setDevOwners(n);  persist({ devOwners: n }); };
+  const updDevStatus = (id, v) => { const n = { ...devStatuses,[id]: v }; setDevStatuses(n);persist({ devStatuses: n }); };
+  const updExtStatus = (id, v) => { const n = { ...extStatuses,[id]: v }; setExtStatuses(n);persist({ extStatuses: n }); };
+  const updDocCert   = (i, v)  => { const n = { ...docCertStatuses, [String(i)]: v }; setDocCertStatuses(n); persist({ docCertStatuses: n }); };
+  const updDocRereg  = (i, v)  => { const n = { ...docReregStatuses,[String(i)]: v }; setDocReregStatuses(n);persist({ docReregStatuses: n }); };
 
   const toggleTask = (id) => { const n = { ...taskDone, [id]: !taskDone[id] }; setTaskDone(n); persist({ taskDone: n }); };
   const toggleExt  = (id) => { const n = { ...extDone,  [id]: !extDone[id]  }; setExtDone(n);  persist({ extDone: n }); };
@@ -311,7 +316,7 @@ export default function App() {
     const item = {
       id: newItem.id || `C-${k.slice(-4)}`, name: newItem.name, note: newItem.note || "",
       owner: newItem.owner || "", target: newItem.target || "",
-      status: newItem.status || (isDoc ? "수급예정" : "기획필요"),
+      status: newItem.status || (isDoc ? "수급예정" : "기획중"),
       due: newItem.due || "", no: newItem.no || ""
     };
     const n = { ...custom, [section]: { ...custom[section], [k]: item } };
@@ -327,21 +332,71 @@ export default function App() {
 
   const mergeEdit = (section, key, base) => ({ ...base, ...(edits[section]?.[key] || {}) });
 
-  // 계산
+  // ─── 드래그 앤 드롭 ──────────────────────────────────────
+  const getOrderedItems = (section, baseItems, customObj) => {
+    const all = [
+      ...baseItems.map(item => ({ key: item.id, isCustom: false, item })),
+      ...Object.entries(customObj || {}).map(([k, item]) => ({ key: k, isCustom: true, item }))
+    ];
+    const savedOrder = orders[section];
+    if (!savedOrder || savedOrder.length === 0) return all;
+    const indexMap = Object.fromEntries(savedOrder.map((k, i) => [k, i]));
+    return [...all].sort((a, b) => (indexMap[a.key] ?? 9999) - (indexMap[b.key] ?? 9999));
+  };
+
+  const handleDragStart = (section, key) => {
+    dragItem.current = { section, key };
+    setDraggingKey(key);
+  };
+  const handleDragEnter = (section, key) => {
+    dragOverItem.current = { section, key };
+    setDragOverKey(key);
+  };
+  const handleDragEnd = () => {
+    setDraggingKey(null);
+    setDragOverKey(null);
+  };
+  const handleDrop = (section, orderedItems) => {
+    if (!dragItem.current || !dragOverItem.current) return;
+    if (dragItem.current.section !== section) return;
+    if (dragItem.current.key === dragOverItem.current.key) return;
+
+    const keys = orderedItems.map(i => i.key);
+    const fromIdx = keys.indexOf(dragItem.current.key);
+    const toIdx   = keys.indexOf(dragOverItem.current.key);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    const newKeys = [...keys];
+    newKeys.splice(fromIdx, 1);
+    newKeys.splice(toIdx, 0, dragItem.current.key);
+
+    const newOrders = { ...orders, [section]: newKeys };
+    setOrders(newOrders);
+    persist({ orders: newOrders });
+    dragItem.current = null;
+    dragOverItem.current = null;
+    setDraggingKey(null);
+    setDragOverKey(null);
+  };
+
+  // ─── 계산 ────────────────────────────────────────────────
   const totalDev = BASE_DEV_P0.length + BASE_DEV_P1.length + BASE_DEV_P2.length
-    + Object.keys(custom.devP0 || {}).length + Object.keys(custom.devP1 || {}).length + Object.keys(custom.devP2 || {}).length;
+    + Object.keys(custom.devP0||{}).length + Object.keys(custom.devP1||{}).length + Object.keys(custom.devP2||{}).length;
   const doneCount    = Object.values(taskDone).filter(Boolean).length;
   const extDoneCount = Object.values(extDone).filter(Boolean).length;
-  const totalExt     = BASE_EXTERNAL.length + Object.keys(custom.ext || {}).length;
+  const totalExt     = BASE_EXTERNAL.length + Object.keys(custom.ext||{}).length;
   const docDoneCount = Object.values(docDone).filter(Boolean).length;
   const totalDocs    = BASE_DOCS_CERT.length + BASE_DOCS_REREG.length
-    + Object.keys(custom.docCert || {}).length + Object.keys(custom.docRereg || {}).length;
+    + Object.keys(custom.docCert||{}).length + Object.keys(custom.docRereg||{}).length;
 
-  const devSection    = devFilter === "P0" ? "devP0" : devFilter === "P1" ? "devP1" : "devP2";
-  const devBaseItems  = devFilter === "P0" ? BASE_DEV_P0 : devFilter === "P1" ? BASE_DEV_P1 : BASE_DEV_P2;
-  const devCustomList = Object.entries(custom[devSection] || {});
+  const devSection   = devFilter === "P0" ? "devP0" : devFilter === "P1" ? "devP1" : "devP2";
+  const devBaseItems = devFilter === "P0" ? BASE_DEV_P0 : devFilter === "P1" ? BASE_DEV_P1 : BASE_DEV_P2;
+  const orderedDevItems  = getOrderedItems(devSection,  devBaseItems,      custom[devSection]);
+  const orderedExtItems  = getOrderedItems("ext",       BASE_EXTERNAL,     custom.ext);
+  const orderedCertItems = getOrderedItems("docCert",   BASE_DOCS_CERT.map((d,i)=>({...d,id:String(i)})), custom.docCert);
+  const orderedReregItems= getOrderedItems("docRereg",  BASE_DOCS_REREG.map((d,i)=>({...d,id:String(i)})), custom.docRereg);
 
-  // ── 렌더 ─────────────────────────────────────────────────
+  // ─── 렌더 ────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-slate-50" style={{ fontFamily: "'Apple SD Gothic Neo','Malgun Gothic',sans-serif" }}>
 
@@ -357,9 +412,9 @@ export default function App() {
             </div>
             <div className="flex gap-3">
               {[
-                { label: "전송자격 신청", date: "7/30",  days: 28,  color: "text-amber-400" },
-                { label: "특부가 재등록", date: "9/19",  days: 79,  color: "text-orange-400" },
-                { label: "법정 데드라인", date: "10/27", days: 117, color: "text-red-400" },
+                { label:"전송자격 신청", date:"7/30",  days:28,  color:"text-amber-400" },
+                { label:"특부가 재등록", date:"9/19",  days:79,  color:"text-orange-400" },
+                { label:"법정 데드라인", date:"10/27", days:117, color:"text-red-400" },
               ].map(m => (
                 <div key={m.label} className="text-center">
                   <div className={`text-2xl font-black ${m.color}`}>D-{m.days}</div>
@@ -372,11 +427,11 @@ export default function App() {
 
           <div className="mt-4 grid grid-cols-3 gap-4">
             {[
-              { label: "개발항목 완료", done: doneCount,    total: totalDev,  color: "bg-blue-400" },
-              { label: "외부확인 완료", done: extDoneCount, total: totalExt,  color: "bg-violet-400" },
-              { label: "서류 준비 완료", done: docDoneCount, total: totalDocs, color: "bg-emerald-400" },
+              { label:"개발항목 완료", done:doneCount,    total:totalDev,  color:"bg-blue-400" },
+              { label:"외부확인 완료", done:extDoneCount, total:totalExt,  color:"bg-violet-400" },
+              { label:"서류 준비 완료",done:docDoneCount, total:totalDocs, color:"bg-emerald-400" },
             ].map(b => {
-              const pct = b.total ? Math.round((b.done / b.total) * 100) : 0;
+              const pct = b.total ? Math.round((b.done/b.total)*100) : 0;
               return (
                 <div key={b.label}>
                   <div className="flex justify-between text-[10px] text-slate-400 mb-1">
@@ -384,7 +439,7 @@ export default function App() {
                     <span className="text-white font-semibold">{b.done}/{b.total}</span>
                   </div>
                   <div className="h-1 bg-slate-700 rounded-full">
-                    <div className={`h-1 rounded-full ${b.color}`} style={{ width: `${pct}%` }} />
+                    <div className={`h-1 rounded-full ${b.color}`} style={{ width:`${pct}%` }} />
                   </div>
                 </div>
               );
@@ -394,12 +449,12 @@ export default function App() {
           <div className="mt-3 flex items-center gap-4 flex-wrap">
             <a href="https://docs.google.com/spreadsheets/d/1alwzM9aqT8uUr7EIkLfIb07sEsVJb-F8hqKVrUEwT5I/edit"
               target="_blank" rel="noreferrer"
-              className="text-[11px] text-slate-400 hover:text-white underline flex items-center gap-1">
+              className="text-[11px] text-slate-400 hover:text-white underline">
               📊 전송자격인증_특부가재등록_WBS
             </a>
             <a href="https://www.figma.com/design/KevxXOvW4YH6cJftaJdVt9/26%EB%85%84_%EC%A0%84%EC%86%A1%EC%9E%90%EA%B2%A9%EC%9D%B8%EC%A6%9D%EC%8B%AC%EC%82%AC-%ED%8A%B9%EB%B6%80%EA%B0%80?node-id=135-8488&t=43fr5t2sQRZizBib-4"
               target="_blank" rel="noreferrer"
-              className="text-[11px] text-slate-400 hover:text-white underline flex items-center gap-1">
+              className="text-[11px] text-slate-400 hover:text-white underline">
               🎨 전송자격인증 기획서 (Figma)
             </a>
           </div>
@@ -410,12 +465,12 @@ export default function App() {
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
         <div className="max-w-4xl mx-auto px-4 flex">
           {[
-            { id: "dev",  label: "🔴 개발 우선순위" },
-            { id: "ext",  label: "📞 외부 확인 현황" },
-            { id: "docs", label: "📁 서류 준비 현황" },
+            { id:"dev",  label:"🔴 개발 우선순위" },
+            { id:"ext",  label:"📞 외부 확인 현황" },
+            { id:"docs", label:"📁 서류 준비 현황" },
           ].map(t => (
             <button key={t.id} onClick={() => { setTab(t.id); setMemoEdit(false); }}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${tab === t.id ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${tab===t.id ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
               {t.label}
             </button>
           ))}
@@ -429,13 +484,10 @@ export default function App() {
           <span className="text-blue-400 text-sm shrink-0">📝</span>
           {memoEdit ? (
             <>
-              <input autoFocus value={memoTemp}
-                onChange={e => setMemoTemp(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && saveMemo()}
-                placeholder="공유사항을 입력하세요 (최대 150자)"
-                maxLength={150}
-                className="flex-1 text-sm bg-transparent border-b border-blue-300 focus:outline-none focus:border-blue-500 text-slate-700 placeholder-blue-300"
-              />
+              <input autoFocus value={memoTemp} onChange={e => setMemoTemp(e.target.value)}
+                onKeyDown={e => e.key==="Enter" && saveMemo()}
+                placeholder="공유사항을 입력하세요 (최대 150자)" maxLength={150}
+                className="flex-1 text-sm bg-transparent border-b border-blue-300 focus:outline-none focus:border-blue-500 text-slate-700 placeholder-blue-300" />
               <button onClick={saveMemo} className="text-xs bg-blue-600 text-white px-3 py-1 rounded shrink-0">저장</button>
               <button onClick={() => setMemoEdit(false)} className="text-xs text-blue-400 shrink-0">취소</button>
             </>
@@ -457,24 +509,25 @@ export default function App() {
           <div>
             <div className="flex gap-2 mb-4">
               {[
-                { key: "P0", label: `P0 필수 (${BASE_DEV_P0.length + Object.keys(custom.devP0 || {}).length})`, color: "bg-red-100 text-red-700 border-red-200" },
-                { key: "P1", label: `P1 중요 (${BASE_DEV_P1.length + Object.keys(custom.devP1 || {}).length})`, color: "bg-amber-100 text-amber-700 border-amber-200" },
-                { key: "P2", label: `P2 보완 (${BASE_DEV_P2.length + Object.keys(custom.devP2 || {}).length})`, color: "bg-blue-100 text-blue-700 border-blue-200" },
+                { key:"P0", label:`P0 필수 (${BASE_DEV_P0.length+Object.keys(custom.devP0||{}).length})`, color:"bg-red-100 text-red-700 border-red-200" },
+                { key:"P1", label:`P1 중요 (${BASE_DEV_P1.length+Object.keys(custom.devP1||{}).length})`, color:"bg-amber-100 text-amber-700 border-amber-200" },
+                { key:"P2", label:`P2 보완 (${BASE_DEV_P2.length+Object.keys(custom.devP2||{}).length})`, color:"bg-blue-100 text-blue-700 border-blue-200" },
               ].map(f => (
                 <button key={f.key} onClick={() => setDevFilter(f.key)}
-                  className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-all ${f.color} ${devFilter === f.key ? "ring-2 ring-offset-1 ring-current" : "opacity-60"}`}>
+                  className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-all ${f.color} ${devFilter===f.key ? "ring-2 ring-offset-1 ring-current" : "opacity-60"}`}>
                   {f.label}
                 </button>
               ))}
             </div>
 
-            <div className={`mb-3 text-xs font-bold px-3 py-1 rounded inline-block ${devFilter === "P0" ? "bg-red-600 text-white" : devFilter === "P1" ? "bg-amber-500 text-white" : "bg-blue-600 text-white"}`}>
-              {devFilter === "P0" ? "🚨 신청일(7/30) 전 완료 필수" : devFilter === "P1" ? "⚡ 신청 후 심사 기간 내 대응 가능" : "📋 소명·보완 항목"}
+            <div className={`mb-3 text-xs font-bold px-3 py-1 rounded inline-block ${devFilter==="P0" ? "bg-red-600 text-white" : devFilter==="P1" ? "bg-amber-500 text-white" : "bg-blue-600 text-white"}`}>
+              {devFilter==="P0" ? "🚨 신청일(7/30) 전 완료 필수" : devFilter==="P1" ? "⚡ 신청 후 심사 기간 내 대응 가능" : "📋 소명·보완 항목"}
             </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-50 rounded text-[10px] text-slate-400">
-                <span className="w-5 shrink-0" />
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded text-[10px] text-slate-400">
+                <span className="w-4 shrink-0" />
+                <span className="w-4 shrink-0" />
                 <span className="w-16 shrink-0">DEV#</span>
                 <span className="flex-1">개발 항목</span>
                 <span className="w-24 shrink-0 text-right hidden sm:block">담당</span>
@@ -482,24 +535,40 @@ export default function App() {
                 <span className="w-10 shrink-0" />
               </div>
 
-              {devBaseItems.map(baseItem => {
-                const item = mergeEdit(devSection, baseItem.id, baseItem);
-                const done = taskDone[baseItem.id] || false;
-                const status = devStatuses[baseItem.id] || baseItem.status;
-                const owner = devOwners[baseItem.id] || baseItem.owner;
-                const eKey = `${devSection}:${baseItem.id}`;
+              {orderedDevItems.map(({ key, isCustom, item: baseItem }) => {
+                const item    = mergeEdit(devSection, key, baseItem);
+                const done    = taskDone[baseItem.id || key] || false;
+                const status  = devStatuses[baseItem.id || key] || baseItem.status || "기획중";
+                const owner   = devOwners[baseItem.id || key]  || baseItem.owner  || "개발";
+                const eKey    = `${devSection}:${key}`;
                 const isEditing = editingKey === eKey;
+                const isDragging = draggingKey === key;
+                const isDragOver = dragOverKey === key && draggingKey !== key;
+
                 return (
-                  <div key={baseItem.id} className={`flex items-start gap-3 px-4 py-3 bg-white border rounded-lg transition-all ${done ? "opacity-50 border-slate-200" : baseItem.risk ? "border-red-200" : "border-slate-200"}`}>
-                    <div className="cursor-pointer shrink-0 mt-0.5" onClick={() => toggleTask(baseItem.id)}>
+                  <div key={key}
+                    draggable
+                    onDragStart={() => handleDragStart(devSection, key)}
+                    onDragEnter={() => handleDragEnter(devSection, key)}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={() => handleDrop(devSection, orderedDevItems)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-start gap-2 px-3 py-3 bg-white border rounded-lg transition-all select-none
+                      ${isDragging ? "opacity-40 border-blue-300 bg-blue-50" : ""}
+                      ${isDragOver ? "border-blue-400 border-2 shadow-md" : "border-slate-200"}
+                      ${!isDragging && !isDragOver && done ? "opacity-50" : ""}
+                      ${!isDragging && baseItem.risk ? "border-red-200" : ""}`}
+                  >
+                    <DragHandle />
+                    <div className="cursor-pointer shrink-0 mt-0.5" onClick={() => toggleTask(baseItem.id || key)}>
                       <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
                         {done && <span className="text-white text-[9px] font-bold">✓</span>}
                       </div>
                     </div>
-                    <span className="text-xs font-mono text-slate-400 w-16 shrink-0 pt-0.5">{baseItem.id}</span>
+                    <span className="text-xs font-mono text-slate-400 w-16 shrink-0 pt-0.5">{baseItem.id || item.id}</span>
                     {isEditing ? (
                       <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true}
-                        onSave={() => saveEdit(devSection, baseItem.id, false)}
+                        onSave={() => saveEdit(devSection, key, isCustom)}
                         onCancel={() => setEditingKey(null)} />
                     ) : (
                       <div className="flex-1 min-w-0">
@@ -511,58 +580,19 @@ export default function App() {
                       </div>
                     )}
                     {!isEditing && <>
-                      <select value={owner} onChange={e => { e.stopPropagation(); updDevOwner(baseItem.id, e.target.value); }} onClick={e => e.stopPropagation()}
+                      <select value={owner} onChange={e => { e.stopPropagation(); updDevOwner(baseItem.id || key, e.target.value); }} onClick={e => e.stopPropagation()}
                         className="text-xs text-slate-500 w-24 shrink-0 hidden sm:block border border-slate-200 rounded px-1 py-0.5 bg-white cursor-pointer focus:outline-none focus:border-blue-400">
                         {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                       <div className="w-24 shrink-0 flex justify-end">
-                        <StatusSelect value={status} options={DEV_STATUS_OPTIONS} styleMap={STATUS_STYLE} onChange={v => updDevStatus(baseItem.id, v)} />
-                      </div>
-                      <div className="w-10 shrink-0 flex justify-end">
-                        <button onClick={e => { e.stopPropagation(); startEdit(devSection, baseItem.id, baseItem); }}
-                          className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                      </div>
-                    </>}
-                  </div>
-                );
-              })}
-
-              {devCustomList.map(([k, baseItem]) => {
-                const item = mergeEdit(devSection, k, baseItem);
-                const done = taskDone[baseItem.id] || false;
-                const status = devStatuses[baseItem.id] || baseItem.status || "기획필요";
-                const owner = devOwners[baseItem.id] || baseItem.owner || "개발";
-                const eKey = `${devSection}:${k}`;
-                const isEditing = editingKey === eKey;
-                return (
-                  <div key={k} className={`flex items-start gap-3 px-4 py-3 bg-white border border-dashed rounded-lg transition-all ${done ? "opacity-50 border-slate-200" : "border-slate-300"}`}>
-                    <div className="cursor-pointer shrink-0 mt-0.5" onClick={() => toggleTask(baseItem.id)}>
-                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
-                        {done && <span className="text-white text-[9px] font-bold">✓</span>}
-                      </div>
-                    </div>
-                    <span className="text-xs font-mono text-slate-400 w-16 shrink-0 pt-0.5">{item.id}</span>
-                    {isEditing ? (
-                      <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true}
-                        onSave={() => saveEdit(devSection, k, true)}
-                        onCancel={() => setEditingKey(null)} />
-                    ) : (
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm ${done ? "line-through text-slate-400" : "text-slate-800"}`}>{item.name}</p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">{item.note}</p>
-                      </div>
-                    )}
-                    {!isEditing && <>
-                      <select value={owner} onChange={e => { e.stopPropagation(); updDevOwner(baseItem.id, e.target.value); }} onClick={e => e.stopPropagation()}
-                        className="text-xs text-slate-500 w-24 shrink-0 hidden sm:block border border-slate-200 rounded px-1 py-0.5 bg-white cursor-pointer focus:outline-none focus:border-blue-400">
-                        {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                      <div className="w-24 shrink-0 flex justify-end">
-                        <StatusSelect value={status} options={DEV_STATUS_OPTIONS} styleMap={STATUS_STYLE} onChange={v => updDevStatus(baseItem.id, v)} />
+                        <StatusSelect value={status} options={DEV_STATUS_OPTIONS} styleMap={STATUS_STYLE}
+                          onChange={v => updDevStatus(baseItem.id || key, v)} />
                       </div>
                       <div className="w-10 shrink-0 flex justify-end gap-1">
-                        <button onClick={e => { e.stopPropagation(); startEdit(devSection, k, baseItem); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                        <button onClick={e => { e.stopPropagation(); deleteCustom(devSection, k); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
+                        <button onClick={e => { e.stopPropagation(); startEdit(devSection, key, item); }}
+                          className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                        {isCustom && <button onClick={e => { e.stopPropagation(); deleteCustom(devSection, key); }}
+                          className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>}
                       </div>
                     </>}
                   </div>
@@ -580,12 +610,10 @@ export default function App() {
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800 flex items-center gap-3">
               {extActionEdit ? (
                 <>
-                  <input autoFocus value={extActionTemp}
-                    onChange={e => setExtActionTemp(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && saveExtAction()}
+                  <input autoFocus value={extActionTemp} onChange={e => setExtActionTemp(e.target.value)}
+                    onKeyDown={e => e.key==="Enter" && saveExtAction()}
                     className="flex-1 bg-transparent border-b border-amber-400 focus:outline-none text-sm text-amber-900"
-                    placeholder="이번 주 액션 메시지 입력"
-                  />
+                    placeholder="이번 주 액션 메시지 입력" />
                   <button onClick={saveExtAction} className="text-xs bg-amber-600 text-white px-2 py-0.5 rounded shrink-0">저장</button>
                   <button onClick={() => setExtActionEdit(false)} className="text-xs text-amber-600 shrink-0">취소</button>
                 </>
@@ -599,31 +627,45 @@ export default function App() {
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-              <div className="flex gap-3 px-4 py-2 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400">
-                <span className="w-5 shrink-0" /><span className="w-14 shrink-0">DEV#</span>
+              <div className="flex gap-2 px-4 py-2 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400">
+                <span className="w-4 shrink-0" /><span className="w-5 shrink-0" /><span className="w-14 shrink-0">DEV#</span>
                 <span className="flex-1">확인 항목</span>
                 <span className="w-20 shrink-0 text-right hidden sm:block">확인 대상</span>
                 <span className="w-24 shrink-0 text-right">상태</span>
                 <span className="w-10 shrink-0" />
               </div>
               <div className="divide-y divide-slate-100">
-                {BASE_EXTERNAL.map(baseItem => {
-                  const item = mergeEdit("ext", baseItem.id, baseItem);
-                  const done = extDone[baseItem.id] || false;
-                  const status = extStatuses[baseItem.id] || baseItem.status;
-                  const eKey = `ext:${baseItem.id}`;
+                {orderedExtItems.map(({ key, isCustom, item: baseItem }) => {
+                  const item      = mergeEdit("ext", key, baseItem);
+                  const done      = extDone[baseItem.id || key] || false;
+                  const status    = extStatuses[baseItem.id || key] || baseItem.status || "미문의";
+                  const eKey      = `ext:${key}`;
                   const isEditing = editingKey === eKey;
+                  const isDragging = draggingKey === key;
+                  const isDragOver = dragOverKey === key && draggingKey !== key;
                   return (
-                    <div key={baseItem.id} className={`flex items-start gap-3 px-4 py-3 transition-colors ${done ? "opacity-50 bg-slate-50" : ""}`}>
-                      <div className="cursor-pointer shrink-0 mt-0.5" onClick={() => toggleExt(baseItem.id)}>
+                    <div key={key}
+                      draggable
+                      onDragStart={() => handleDragStart("ext", key)}
+                      onDragEnter={() => handleDragEnter("ext", key)}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={() => handleDrop("ext", orderedExtItems)}
+                      onDragEnd={handleDragEnd}
+                      className={`flex items-start gap-2 px-4 py-3 transition-all select-none
+                        ${isDragging ? "opacity-40 bg-blue-50" : ""}
+                        ${isDragOver ? "border-l-4 border-blue-400 bg-blue-50/30" : ""}
+                        ${!isDragging && done ? "opacity-50 bg-slate-50" : ""}`}
+                    >
+                      <DragHandle />
+                      <div className="cursor-pointer shrink-0 mt-0.5" onClick={() => toggleExt(baseItem.id || key)}>
                         <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
                           {done && <span className="text-white text-[9px] font-bold">✓</span>}
                         </div>
                       </div>
-                      <span className="text-xs font-mono text-slate-400 w-14 shrink-0 pt-0.5">{baseItem.id}</span>
+                      <span className="text-xs font-mono text-slate-400 w-14 shrink-0 pt-0.5">{baseItem.id || item.id}</span>
                       {isEditing ? (
                         <EditInline editForm={editForm} setEditForm={setEditForm} showTarget={true}
-                          onSave={() => saveEdit("ext", baseItem.id, false)}
+                          onSave={() => saveEdit("ext", key, isCustom)}
                           onCancel={() => setEditingKey(null)} />
                       ) : (
                         <div className="flex-1 min-w-0">
@@ -637,47 +679,12 @@ export default function App() {
                       {!isEditing && <>
                         <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner || baseItem.target}</span>
                         <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={EXT_STATUS_OPTIONS} styleMap={EXT_STATUS_STYLE} onChange={v => updExtStatus(baseItem.id, v)} />
-                        </div>
-                        <div className="w-10 shrink-0 flex justify-end">
-                          <button onClick={e => { e.stopPropagation(); startEdit("ext", baseItem.id, baseItem); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                        </div>
-                      </>}
-                    </div>
-                  );
-                })}
-                {Object.entries(custom.ext || {}).map(([k, baseItem]) => {
-                  const item = mergeEdit("ext", k, baseItem);
-                  const done = extDone[baseItem.id] || false;
-                  const status = extStatuses[baseItem.id] || baseItem.status || "미문의";
-                  const eKey = `ext:${k}`;
-                  const isEditing = editingKey === eKey;
-                  return (
-                    <div key={k} className={`flex items-start gap-3 px-4 py-3 bg-slate-50/50 transition-colors ${done ? "opacity-50" : ""}`}>
-                      <div className="cursor-pointer shrink-0 mt-0.5" onClick={() => toggleExt(baseItem.id)}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
-                          {done && <span className="text-white text-[9px] font-bold">✓</span>}
-                        </div>
-                      </div>
-                      <span className="text-xs font-mono text-slate-400 w-14 shrink-0 pt-0.5">{item.id}</span>
-                      {isEditing ? (
-                        <EditInline editForm={editForm} setEditForm={setEditForm} showTarget={true}
-                          onSave={() => saveEdit("ext", k, true)}
-                          onCancel={() => setEditingKey(null)} />
-                      ) : (
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm ${done ? "line-through text-slate-400" : "text-slate-800"}`}>{item.name}</p>
-                          <p className="text-[11px] text-slate-400 mt-0.5">{item.note}</p>
-                        </div>
-                      )}
-                      {!isEditing && <>
-                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner || item.target}</span>
-                        <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={EXT_STATUS_OPTIONS} styleMap={EXT_STATUS_STYLE} onChange={v => updExtStatus(baseItem.id, v)} />
+                          <StatusSelect value={status} options={EXT_STATUS_OPTIONS} styleMap={EXT_STATUS_STYLE}
+                            onChange={v => updExtStatus(baseItem.id || key, v)} />
                         </div>
                         <div className="w-10 shrink-0 flex justify-end gap-1">
-                          <button onClick={e => { e.stopPropagation(); startEdit("ext", k, baseItem); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                          <button onClick={e => { e.stopPropagation(); deleteCustom("ext", k); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
+                          <button onClick={e => { e.stopPropagation(); startEdit("ext", key, item); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                          {isCustom && <button onClick={e => { e.stopPropagation(); deleteCustom("ext", key); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>}
                         </div>
                       </>}
                     </div>
@@ -694,11 +701,11 @@ export default function App() {
               <h3 className="text-xs font-semibold text-slate-600 mb-3">📌 주요 연락처</h3>
               <div className="space-y-2">
                 {[
-                  { label: "전송자격인증 신청·접수", contact: "antispam@korea.kr",  note: "방송미디어통신위원회" },
-                  { label: "인증심사 기술지원",       contact: "srt@kisa.or.kr",    note: "KISA" },
-                  { label: "식별코드 삽입·위변조",    contact: "numbers@kisa.or.kr", note: "KISA" },
-                  { label: "X-ray 악성문자 차단",     contact: "x-ray@kisa.or.kr",  note: "KISA" },
-                  { label: "KTOA 이용증명원",         contact: "snb.ktoa.or.kr",    note: "한국통신사업자연합회" },
+                  { label:"전송자격인증 신청·접수", contact:"antispam@korea.kr",  note:"방송미디어통신위원회" },
+                  { label:"인증심사 기술지원",       contact:"srt@kisa.or.kr",    note:"KISA" },
+                  { label:"식별코드 삽입·위변조",    contact:"numbers@kisa.or.kr", note:"KISA" },
+                  { label:"X-ray 악성문자 차단",     contact:"x-ray@kisa.or.kr",  note:"KISA" },
+                  { label:"KTOA 이용증명원",         contact:"snb.ktoa.or.kr",    note:"한국통신사업자연합회" },
                 ].map(c => (
                   <div key={c.contact} className="flex items-center gap-3">
                     <span className="text-xs text-slate-500 w-36 shrink-0">{c.label}</span>
@@ -714,6 +721,8 @@ export default function App() {
         {/* ── 서류 준비 현황 탭 ── */}
         {tab === "docs" && (
           <div className="space-y-4">
+
+            {/* 전송자격인증 서류 */}
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
               <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
                 <div>
@@ -721,11 +730,11 @@ export default function App() {
                   <p className="text-xs text-amber-700 mt-0.5">제출처: antispam@korea.kr · 신청 목표: 7/30</p>
                 </div>
                 <span className="text-xs font-medium bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                  {BASE_DOCS_CERT.filter((_, i) => docDone["c" + i]).length}/{BASE_DOCS_CERT.length + Object.keys(custom.docCert || {}).length} 완료
+                  {orderedCertItems.filter(({key,isCustom}) => docDone[(isCustom?"cc":"c")+key]).length}/{orderedCertItems.length} 완료
                 </span>
               </div>
-              <div className="flex gap-3 px-4 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400">
-                <span className="w-5 shrink-0" /><span className="w-5 shrink-0">#</span>
+              <div className="flex gap-2 px-4 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400">
+                <span className="w-4 shrink-0" /><span className="w-5 shrink-0" /><span className="w-5 shrink-0">#</span>
                 <span className="flex-1">서류명</span>
                 <span className="w-14 shrink-0 text-right hidden md:block">마감</span>
                 <span className="w-20 shrink-0 text-right hidden sm:block">담당</span>
@@ -733,25 +742,40 @@ export default function App() {
                 <span className="w-6 shrink-0" />
               </div>
               <div className="divide-y divide-slate-100">
-                {BASE_DOCS_CERT.map((baseItem, i) => {
-                  const item = mergeEdit("docCert", String(i), baseItem);
-                  const dKey = "c" + i;
-                  const done = docDone[dKey] || false;
-                  const status = docCertStatuses[String(i)] || baseItem.status;
-                  const eKey = `docCert:${i}`;
+                {orderedCertItems.map(({ key, isCustom, item: baseItem }) => {
+                  const origIdx   = isCustom ? null : Number(key);
+                  const item      = mergeEdit("docCert", key, baseItem);
+                  const dKey      = isCustom ? "cc"+key : "c"+key;
+                  const done      = docDone[dKey] || false;
+                  const status    = docCertStatuses[key] || baseItem.status || "수급예정";
+                  const eKey      = `docCert:${key}`;
                   const isEditing = editingKey === eKey;
+                  const isDragging = draggingKey === key;
+                  const isDragOver = dragOverKey === key && draggingKey !== key;
                   return (
-                    <div key={i} className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${done ? "opacity-50 bg-slate-50" : ""}`}>
+                    <div key={key}
+                      draggable
+                      onDragStart={() => handleDragStart("docCert", key)}
+                      onDragEnter={() => handleDragEnter("docCert", key)}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={() => handleDrop("docCert", orderedCertItems)}
+                      onDragEnd={handleDragEnd}
+                      className={`flex items-center gap-2 px-4 py-2.5 transition-all select-none
+                        ${isDragging ? "opacity-40 bg-blue-50" : ""}
+                        ${isDragOver ? "border-l-4 border-blue-400 bg-blue-50/30" : ""}
+                        ${!isDragging && done ? "opacity-50 bg-slate-50" : ""}`}
+                    >
+                      <DragHandle />
                       <div className="cursor-pointer" onClick={() => toggleDoc(dKey)}>
                         <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
                           {done && <span className="text-white text-[9px] font-bold">✓</span>}
                         </div>
                       </div>
-                      <span className="text-xs text-slate-400 w-5 shrink-0">{baseItem.no}</span>
+                      <span className="text-xs text-slate-400 w-5 shrink-0">{baseItem.no || "＋"}</span>
                       {isEditing ? (
                         <div className="flex-1">
                           <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true} showDue={true}
-                            onSave={() => saveEdit("docCert", String(i), false)}
+                            onSave={() => saveEdit("docCert", key, isCustom)}
                             onCancel={() => setEditingKey(null)} />
                         </div>
                       ) : (
@@ -761,48 +785,12 @@ export default function App() {
                         <span className="text-xs text-slate-400 w-14 shrink-0 text-right hidden md:block">{item.due || baseItem.due}</span>
                         <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner || baseItem.owner}</span>
                         <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v => updDocCert(i, v)} />
-                        </div>
-                        <div className="w-6 shrink-0 flex justify-end">
-                          <button onClick={e => { e.stopPropagation(); startEdit("docCert", String(i), { ...baseItem, ...item }); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                        </div>
-                      </>}
-                    </div>
-                  );
-                })}
-                {Object.entries(custom.docCert || {}).map(([k, baseItem]) => {
-                  const item = mergeEdit("docCert", k, baseItem);
-                  const dKey = "cc" + k;
-                  const done = docDone[dKey] || false;
-                  const status = docCertStatuses[k] || baseItem.status || "수급예정";
-                  const eKey = `docCert:${k}`;
-                  const isEditing = editingKey === eKey;
-                  return (
-                    <div key={k} className={`flex items-center gap-3 px-4 py-2.5 bg-slate-50/50 transition-colors ${done ? "opacity-50" : ""}`}>
-                      <div className="cursor-pointer" onClick={() => toggleDoc(dKey)}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
-                          {done && <span className="text-white text-[9px] font-bold">✓</span>}
-                        </div>
-                      </div>
-                      <span className="text-xs text-slate-400 w-5 shrink-0">{item.no || "＋"}</span>
-                      {isEditing ? (
-                        <div className="flex-1">
-                          <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true} showDue={true}
-                            onSave={() => saveEdit("docCert", k, true)}
-                            onCancel={() => setEditingKey(null)} />
-                        </div>
-                      ) : (
-                        <span className={`flex-1 text-sm ${done ? "line-through text-slate-400" : "text-slate-700"}`}>{item.name}</span>
-                      )}
-                      {!isEditing && <>
-                        <span className="text-xs text-slate-400 w-14 shrink-0 text-right hidden md:block">{item.due}</span>
-                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner}</span>
-                        <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v => { const n = { ...docCertStatuses, [k]: v }; setDocCertStatuses(n); persist({ docCertStatuses: n }); }} />
+                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE}
+                            onChange={v => origIdx !== null ? updDocCert(origIdx, v) : (() => { const n={...docCertStatuses,[key]:v}; setDocCertStatuses(n); persist({docCertStatuses:n}); })()} />
                         </div>
                         <div className="w-6 shrink-0 flex justify-end gap-1">
-                          <button onClick={e => { e.stopPropagation(); startEdit("docCert", k, baseItem); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                          <button onClick={e => { e.stopPropagation(); deleteCustom("docCert", k); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
+                          <button onClick={e => { e.stopPropagation(); startEdit("docCert", key, {...baseItem,...item}); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                          {isCustom && <button onClick={e => { e.stopPropagation(); deleteCustom("docCert", key); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>}
                         </div>
                       </>}
                     </div>
@@ -815,6 +803,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* 특부가 재등록 서류 */}
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
               <div className="px-4 py-3 bg-violet-50 border-b border-violet-100 flex items-center justify-between">
                 <div>
@@ -822,11 +811,11 @@ export default function App() {
                   <p className="text-xs text-violet-700 mt-0.5">중앙전파관리소 제출 · 재등록 신청 목표: 9/19~9/20</p>
                 </div>
                 <span className="text-xs font-medium bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">
-                  {BASE_DOCS_REREG.filter((_, i) => docDone["r" + i]).length}/{BASE_DOCS_REREG.length + Object.keys(custom.docRereg || {}).length} 완료
+                  {orderedReregItems.filter(({key,isCustom}) => docDone[(isCustom?"cr":"r")+key]).length}/{orderedReregItems.length} 완료
                 </span>
               </div>
-              <div className="flex gap-3 px-4 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400">
-                <span className="w-5 shrink-0" /><span className="w-5 shrink-0">#</span>
+              <div className="flex gap-2 px-4 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400">
+                <span className="w-4 shrink-0" /><span className="w-5 shrink-0" /><span className="w-5 shrink-0">#</span>
                 <span className="flex-1">서류명</span>
                 <span className="w-14 shrink-0 text-right hidden md:block">마감</span>
                 <span className="w-20 shrink-0 text-right hidden sm:block">담당</span>
@@ -834,76 +823,55 @@ export default function App() {
                 <span className="w-6 shrink-0" />
               </div>
               <div className="divide-y divide-slate-100">
-                {BASE_DOCS_REREG.map((baseItem, i) => {
-                  const item = mergeEdit("docRereg", String(i), baseItem);
-                  const dKey = "r" + i;
-                  const done = docDone[dKey] || false;
-                  const status = docReregStatuses[String(i)] || baseItem.status;
-                  const eKey = `docRereg:${i}`;
+                {orderedReregItems.map(({ key, isCustom, item: baseItem }) => {
+                  const origIdx   = isCustom ? null : Number(key);
+                  const item      = mergeEdit("docRereg", key, baseItem);
+                  const dKey      = isCustom ? "cr"+key : "r"+key;
+                  const done      = docDone[dKey] || false;
+                  const status    = docReregStatuses[key] || baseItem.status || "증빙필요";
+                  const eKey      = `docRereg:${key}`;
                   const isEditing = editingKey === eKey;
+                  const isDragging = draggingKey === key;
+                  const isDragOver = dragOverKey === key && draggingKey !== key;
                   return (
-                    <div key={i} className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${done ? "opacity-50 bg-slate-50" : ""}`}>
+                    <div key={key}
+                      draggable
+                      onDragStart={() => handleDragStart("docRereg", key)}
+                      onDragEnter={() => handleDragEnter("docRereg", key)}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={() => handleDrop("docRereg", orderedReregItems)}
+                      onDragEnd={handleDragEnd}
+                      className={`flex items-center gap-2 px-4 py-2.5 transition-all select-none
+                        ${isDragging ? "opacity-40 bg-blue-50" : ""}
+                        ${isDragOver ? "border-l-4 border-blue-400 bg-blue-50/30" : ""}
+                        ${!isDragging && done ? "opacity-50 bg-slate-50" : ""}`}
+                    >
+                      <DragHandle />
                       <div className="cursor-pointer" onClick={() => toggleDoc(dKey)}>
                         <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
                           {done && <span className="text-white text-[9px] font-bold">✓</span>}
                         </div>
                       </div>
-                      <span className="text-xs text-slate-400 w-5 shrink-0">{baseItem.no}</span>
+                      <span className="text-xs text-slate-400 w-5 shrink-0">{baseItem.no || "＋"}</span>
                       {isEditing ? (
                         <div className="flex-1">
                           <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true} showDue={true}
-                            onSave={() => saveEdit("docRereg", String(i), false)}
+                            onSave={() => saveEdit("docRereg", key, isCustom)}
                             onCancel={() => setEditingKey(null)} />
                         </div>
                       ) : (
-                        <span className={`flex-1 text-sm ${done ? "line-through text-slate-400" : baseItem.status === "리스크" ? "text-red-700 font-medium" : "text-slate-700"}`}>{item.name}</span>
+                        <span className={`flex-1 text-sm ${done ? "line-through text-slate-400" : baseItem.status==="리스크" ? "text-red-700 font-medium" : "text-slate-700"}`}>{item.name}</span>
                       )}
                       {!isEditing && <>
                         <span className="text-xs text-slate-400 w-14 shrink-0 text-right hidden md:block">{item.due || baseItem.due}</span>
                         <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner || baseItem.owner}</span>
                         <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v => updDocRereg(i, v)} />
-                        </div>
-                        <div className="w-6 shrink-0 flex justify-end">
-                          <button onClick={e => { e.stopPropagation(); startEdit("docRereg", String(i), { ...baseItem, ...item }); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                        </div>
-                      </>}
-                    </div>
-                  );
-                })}
-                {Object.entries(custom.docRereg || {}).map(([k, baseItem]) => {
-                  const item = mergeEdit("docRereg", k, baseItem);
-                  const dKey = "cr" + k;
-                  const done = docDone[dKey] || false;
-                  const status = docReregStatuses[k] || baseItem.status || "수급예정";
-                  const eKey = `docRereg:${k}`;
-                  const isEditing = editingKey === eKey;
-                  return (
-                    <div key={k} className={`flex items-center gap-3 px-4 py-2.5 bg-slate-50/50 transition-colors ${done ? "opacity-50" : ""}`}>
-                      <div className="cursor-pointer" onClick={() => toggleDoc(dKey)}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
-                          {done && <span className="text-white text-[9px] font-bold">✓</span>}
-                        </div>
-                      </div>
-                      <span className="text-xs text-slate-400 w-5 shrink-0">{item.no || "＋"}</span>
-                      {isEditing ? (
-                        <div className="flex-1">
-                          <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true} showDue={true}
-                            onSave={() => saveEdit("docRereg", k, true)}
-                            onCancel={() => setEditingKey(null)} />
-                        </div>
-                      ) : (
-                        <span className={`flex-1 text-sm ${done ? "line-through text-slate-400" : "text-slate-700"}`}>{item.name}</span>
-                      )}
-                      {!isEditing && <>
-                        <span className="text-xs text-slate-400 w-14 shrink-0 text-right hidden md:block">{item.due}</span>
-                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner}</span>
-                        <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v => { const n = { ...docReregStatuses, [k]: v }; setDocReregStatuses(n); persist({ docReregStatuses: n }); }} />
+                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE}
+                            onChange={v => origIdx !== null ? updDocRereg(origIdx, v) : (() => { const n={...docReregStatuses,[key]:v}; setDocReregStatuses(n); persist({docReregStatuses:n}); })()} />
                         </div>
                         <div className="w-6 shrink-0 flex justify-end gap-1">
-                          <button onClick={e => { e.stopPropagation(); startEdit("docRereg", k, baseItem); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                          <button onClick={e => { e.stopPropagation(); deleteCustom("docRereg", k); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
+                          <button onClick={e => { e.stopPropagation(); startEdit("docRereg", key, {...baseItem,...item}); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                          {isCustom && <button onClick={e => { e.stopPropagation(); deleteCustom("docRereg", key); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>}
                         </div>
                       </>}
                     </div>
