@@ -3,7 +3,10 @@ import { db, isConfigured } from "./firebase";
 import { ref, onValue, update } from "firebase/database";
 
 // ─── 상태 옵션 ────────────────────────────────────────────
-const DEV_STATUS_OPTIONS = ["기획필요","개발필요","기획전달예정","개발중","테스트","서류 작성중","소명예정","증빙필요","완료"];
+const DEV_STATUS_OPTIONS = [
+  "진행예정","기획필요","기획중","기획전달예정","개발필요","개발중",
+  "테스트","외부 문의 중","확인필요","서류 작성중","소명예정","소명","증빙필요","완료"
+];
 const EXT_STATUS_OPTIONS = ["미문의","답변대기","긍정회신","리스크","완료"];
 const DOC_STATUS_OPTIONS = ["수급예정","수정필요","소명예정","증빙필요","외부문의","리스크","-","완료"];
 const OWNER_OPTIONS = ["기획","개발","기획+개발","개발+기획","기획(인사)","기획(재무)","기획(HR)","외부"];
@@ -69,6 +72,11 @@ const STATUS_STYLE = {
   "증빙필요":"bg-violet-100 text-violet-700", "완료":"bg-emerald-100 text-emerald-700",
   "개발중":"bg-indigo-100 text-indigo-700", "테스트":"bg-cyan-100 text-cyan-700",
   "서류 작성중":"bg-teal-100 text-teal-700",
+  "진행예정":"bg-slate-100 text-slate-600",
+  "기획중":"bg-yellow-100 text-yellow-700",
+  "외부 문의 중":"bg-orange-100 text-orange-700",
+  "확인필요":"bg-pink-100 text-pink-700",
+  "소명":"bg-blue-100 text-blue-700",
 };
 const DOC_STATUS_STYLE = {
   "수급예정":"bg-slate-100 text-slate-500", "수정필요":"bg-amber-100 text-amber-700",
@@ -86,6 +94,99 @@ const EXT_STATUS_STYLE = {
 const LS_KEY = "wbs_state_v3";
 function loadState() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch { return {}; } }
 
+// ─── 외부 컴포넌트 (App 밖에 정의 → 재렌더시 포커스 유지) ─
+function StatusSelect({ value, options, styleMap, onChange }) {
+  return (
+    <select
+      value={value || ""}
+      onChange={e => { e.stopPropagation(); onChange(e.target.value); }}
+      onClick={e => e.stopPropagation()}
+      className={`text-[10px] px-2 py-0.5 rounded-full font-medium cursor-pointer border-0 focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-slate-400 ${styleMap[value] || "bg-slate-100 text-slate-500"}`}
+    >
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+}
+
+function EditInline({ editForm, setEditForm, onSave, onCancel, showOwner = true, showDue = false, showTarget = false }) {
+  return (
+    <div className="flex-1 space-y-1.5 py-0.5">
+      <input
+        value={editForm.name}
+        onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
+        placeholder="항목명"
+        className="w-full text-sm border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+      />
+      <input
+        value={editForm.note}
+        onChange={e => setEditForm(p => ({ ...p, note: e.target.value }))}
+        placeholder="비고"
+        className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+      />
+      {(showOwner || showTarget) && (
+        <input
+          value={editForm.owner}
+          onChange={e => setEditForm(p => ({ ...p, owner: e.target.value }))}
+          placeholder={showTarget ? "확인 대상" : "담당자"}
+          className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+        />
+      )}
+      {showDue && (
+        <input
+          value={editForm.due}
+          onChange={e => setEditForm(p => ({ ...p, due: e.target.value }))}
+          placeholder="마감일 (예: 7/14)"
+          className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+        />
+      )}
+      <div className="flex gap-1.5 pt-0.5">
+        <button onClick={onSave} className="text-xs bg-slate-900 text-white px-3 py-1 rounded">저장</button>
+        <button onClick={onCancel} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">취소</button>
+      </div>
+    </div>
+  );
+}
+
+function AddForm({ section, options, showOwner = true, showDue = false, showTarget = false, addingTo, setAddingTo, newItem, setNewItem, onAdd }) {
+  if (addingTo !== section) {
+    return (
+      <button
+        onClick={() => setAddingTo(section)}
+        className="mt-3 w-full text-xs text-slate-400 border border-dashed border-slate-300 rounded-lg py-2.5 hover:bg-slate-50 hover:text-slate-600 transition-colors"
+      >
+        + 항목 추가
+      </button>
+    );
+  }
+  return (
+    <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <input value={newItem.id || ""} onChange={e => setNewItem(p => ({ ...p, id: e.target.value }))}
+          placeholder="ID (예: DEV-30)" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none" />
+        <input value={newItem.name || ""} onChange={e => setNewItem(p => ({ ...p, name: e.target.value }))}
+          placeholder="항목명 *" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none" />
+        {showOwner && <input value={newItem.owner || ""} onChange={e => setNewItem(p => ({ ...p, owner: e.target.value }))}
+          placeholder="담당자" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none" />}
+        {showTarget && <input value={newItem.target || ""} onChange={e => setNewItem(p => ({ ...p, target: e.target.value }))}
+          placeholder="확인 대상" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none" />}
+        {showDue && <input value={newItem.due || ""} onChange={e => setNewItem(p => ({ ...p, due: e.target.value }))}
+          placeholder="마감 (예: 7/14)" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none" />}
+        <input value={newItem.note || ""} onChange={e => setNewItem(p => ({ ...p, note: e.target.value }))}
+          placeholder="비고" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none col-span-2" />
+      </div>
+      <div className="flex gap-2 items-center">
+        <select value={newItem.status || (section.startsWith("doc") ? "수급예정" : "기획필요")}
+          onChange={e => setNewItem(p => ({ ...p, status: e.target.value }))}
+          className="text-xs border border-slate-300 rounded px-2 py-1">
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <button onClick={onAdd} className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded">추가</button>
+        <button onClick={() => { setAddingTo(null); setNewItem({}); }} className="text-xs bg-slate-100 text-slate-600 px-2 py-1.5 rounded">취소</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── 앱 ──────────────────────────────────────────────────
 export default function App() {
   const saved = loadState();
@@ -93,57 +194,52 @@ export default function App() {
   const [tab, setTab] = useState("dev");
   const [devFilter, setDevFilter] = useState("P0");
 
-  // 담당자 (selectbox)
   const [devOwners, setDevOwners] = useState({
-    ...Object.fromEntries([...BASE_DEV_P0,...BASE_DEV_P1,...BASE_DEV_P2].map(i=>[i.id,i.owner])),
-    ...(saved.devOwners||{})
+    ...Object.fromEntries([...BASE_DEV_P0, ...BASE_DEV_P1, ...BASE_DEV_P2].map(i => [i.id, i.owner])),
+    ...(saved.devOwners || {})
   });
-
-  // 상태값 (selectbox)
   const [devStatuses, setDevStatuses] = useState({
-    ...Object.fromEntries([...BASE_DEV_P0,...BASE_DEV_P1,...BASE_DEV_P2].map(i=>[i.id,i.status])),
-    ...(saved.devStatuses||{})
+    ...Object.fromEntries([...BASE_DEV_P0, ...BASE_DEV_P1, ...BASE_DEV_P2].map(i => [i.id, i.status])),
+    ...(saved.devStatuses || {})
   });
   const [extStatuses, setExtStatuses] = useState({
-    ...Object.fromEntries(BASE_EXTERNAL.map(i=>[i.id,i.status])),
-    ...(saved.extStatuses||{})
+    ...Object.fromEntries(BASE_EXTERNAL.map(i => [i.id, i.status])),
+    ...(saved.extStatuses || {})
   });
   const [docCertStatuses, setDocCertStatuses] = useState({
-    ...Object.fromEntries(BASE_DOCS_CERT.map((d,i)=>[String(i),d.status])),
-    ...(saved.docCertStatuses||{})
+    ...Object.fromEntries(BASE_DOCS_CERT.map((d, i) => [String(i), d.status])),
+    ...(saved.docCertStatuses || {})
   });
   const [docReregStatuses, setDocReregStatuses] = useState({
-    ...Object.fromEntries(BASE_DOCS_REREG.map((d,i)=>[String(i),d.status])),
-    ...(saved.docReregStatuses||{})
+    ...Object.fromEntries(BASE_DOCS_REREG.map((d, i) => [String(i), d.status])),
+    ...(saved.docReregStatuses || {})
   });
 
-  // 완료 체크
-  const [taskDone, setTaskDone] = useState(saved.taskDone||{});
-  const [extDone, setExtDone] = useState(saved.extDone||{});
-  const [docDone, setDocDone] = useState(saved.docDone||{});
+  const [taskDone, setTaskDone] = useState(saved.taskDone || {});
+  const [extDone, setExtDone] = useState(saved.extDone || {});
+  const [docDone, setDocDone] = useState(saved.docDone || {});
 
-  // 메모 (탭별)
-  const [memos, setMemos] = useState({ dev:"", ext:"", docs:"", extAction:"KTOA API 스웨거 원문 확인 후 snb.ktoa.or.kr 문의 진행 (DEV-24 P0)", ...(saved.memos||{}) });
-  const [extActionEdit, setExtActionEdit] = useState(false);
-  const [extActionTemp, setExtActionTemp] = useState("");
-
-  // 커스텀 항목 (추가된 항목들)
+  const [memos, setMemos] = useState({
+    dev: "", ext: "", docs: "",
+    extAction: "KTOA API 스웨거 원문 확인 후 snb.ktoa.or.kr 문의 진행 (DEV-24 P0)",
+    ...(saved.memos || {})
+  });
   const [custom, setCustom] = useState({
-    devP0:{}, devP1:{}, devP2:{}, ext:{}, docCert:{}, docRereg:{},
-    ...(saved.custom||{})
+    devP0: {}, devP1: {}, devP2: {}, ext: {}, docCert: {}, docRereg: {},
+    ...(saved.custom || {})
   });
-
-  // 기존 항목 수정 내용
   const [edits, setEdits] = useState({
-    devP0:{}, devP1:{}, devP2:{}, ext:{}, docCert:{}, docRereg:{},
-    ...(saved.edits||{})
+    devP0: {}, devP1: {}, devP2: {}, ext: {}, docCert: {}, docRereg: {},
+    ...(saved.edits || {})
   });
 
   // UI 상태
   const [memoEdit, setMemoEdit] = useState(false);
   const [memoTemp, setMemoTemp] = useState("");
-  const [editingKey, setEditingKey] = useState(null); // "section:key"
-  const [editForm, setEditForm] = useState({});
+  const [extActionEdit, setExtActionEdit] = useState(false);
+  const [extActionTemp, setExtActionTemp] = useState("");
+  const [editingKey, setEditingKey] = useState(null);
+  const [editForm, setEditForm] = useState({ name: "", note: "", owner: "", due: "" });
   const [addingTo, setAddingTo] = useState(null);
   const [newItem, setNewItem] = useState({});
   const [fbStatus, setFbStatus] = useState(isConfigured ? "연결 중..." : "로컬저장");
@@ -156,179 +252,102 @@ export default function App() {
       setFbStatus("실시간 연결됨 ✓");
       if (!snap.exists()) return;
       const d = snap.val();
-      if (d.devStatuses) setDevStatuses(p=>({...p,...d.devStatuses}));
-      if (d.extStatuses) setExtStatuses(p=>({...p,...d.extStatuses}));
-      if (d.docCertStatuses) setDocCertStatuses(p=>({...p,...d.docCertStatuses}));
-      if (d.docReregStatuses) setDocReregStatuses(p=>({...p,...d.docReregStatuses}));
-      if (d.taskDone !== undefined) setTaskDone(d.taskDone||{});
-      if (d.extDone !== undefined) setExtDone(d.extDone||{});
-      if (d.docDone !== undefined) setDocDone(d.docDone||{});
-      if (d.memos) setMemos(p=>({...p,...d.memos}));
-      if (d.custom) setCustom(p=>({devP0:{},devP1:{},devP2:{},ext:{},docCert:{},docRereg:{},...p,...d.custom}));
-      if (d.edits) setEdits(p=>({devP0:{},devP1:{},devP2:{},ext:{},docCert:{},docRereg:{},...p,...d.edits}));
+      if (d.devOwners) setDevOwners(p => ({ ...p, ...d.devOwners }));
+      if (d.devStatuses) setDevStatuses(p => ({ ...p, ...d.devStatuses }));
+      if (d.extStatuses) setExtStatuses(p => ({ ...p, ...d.extStatuses }));
+      if (d.docCertStatuses) setDocCertStatuses(p => ({ ...p, ...d.docCertStatuses }));
+      if (d.docReregStatuses) setDocReregStatuses(p => ({ ...p, ...d.docReregStatuses }));
+      if (d.taskDone !== undefined) setTaskDone(d.taskDone || {});
+      if (d.extDone !== undefined) setExtDone(d.extDone || {});
+      if (d.docDone !== undefined) setDocDone(d.docDone || {});
+      if (d.memos) setMemos(p => ({ ...p, ...d.memos }));
+      if (d.custom) setCustom(p => ({ devP0: {}, devP1: {}, devP2: {}, ext: {}, docCert: {}, docRereg: {}, ...p, ...d.custom }));
+      if (d.edits) setEdits(p => ({ devP0: {}, devP1: {}, devP2: {}, ext: {}, docCert: {}, docRereg: {}, ...p, ...d.edits }));
     }, () => setFbStatus("연결 오류"));
     return () => unsub();
   }, []);
 
-  // 저장 (localStorage + Firebase)
   const persist = (updates) => {
-    const full = { devStatuses, extStatuses, docCertStatuses, docReregStatuses, taskDone, extDone, docDone, memos, custom, edits, devOwners, ...updates };
+    const full = { devOwners, devStatuses, extStatuses, docCertStatuses, docReregStatuses, taskDone, extDone, docDone, memos, custom, edits, ...updates };
     localStorage.setItem(LS_KEY, JSON.stringify(full));
-    if (isConfigured && db) update(ref(db,"wbs"), updates).catch(console.error);
+    if (isConfigured && db) update(ref(db, "wbs"), updates).catch(console.error);
   };
 
-  // 담당자 핸들러
-  const updDevOwner    = (id,v) => { const n={...devOwners,[id]:v};         setDevOwners(n);         persist({devOwners:n}); };
+  // 핸들러
+  const updDevOwner     = (id, v) => { const n = { ...devOwners, [id]: v };           setDevOwners(n);          persist({ devOwners: n }); };
+  const updDevStatus    = (id, v) => { const n = { ...devStatuses, [id]: v };         setDevStatuses(n);        persist({ devStatuses: n }); };
+  const updExtStatus    = (id, v) => { const n = { ...extStatuses, [id]: v };         setExtStatuses(n);        persist({ extStatuses: n }); };
+  const updDocCert      = (i, v) =>  { const n = { ...docCertStatuses, [String(i)]: v }; setDocCertStatuses(n); persist({ docCertStatuses: n }); };
+  const updDocRereg     = (i, v) =>  { const n = { ...docReregStatuses, [String(i)]: v }; setDocReregStatuses(n); persist({ docReregStatuses: n }); };
 
-  // 외부확인 액션 저장
-  const saveExtAction  = () => { const n={...memos,extAction:extActionTemp}; setMemos(n); setExtActionEdit(false); persist({memos:n}); };
+  const toggleTask = (id) => { const n = { ...taskDone, [id]: !taskDone[id] }; setTaskDone(n); persist({ taskDone: n }); };
+  const toggleExt  = (id) => { const n = { ...extDone,  [id]: !extDone[id]  }; setExtDone(n);  persist({ extDone: n }); };
+  const toggleDoc  = (k)  => { const n = { ...docDone,  [k]:  !docDone[k]   }; setDocDone(n);  persist({ docDone: n }); };
 
-  // 상태 핸들러
-  const updDevStatus   = (id,v) => { const n={...devStatuses,[id]:v};       setDevStatuses(n);       persist({devStatuses:n}); };
-  const updExtStatus   = (id,v) => { const n={...extStatuses,[id]:v};       setExtStatuses(n);       persist({extStatuses:n}); };
-  const updDocCert     = (i,v)  => { const n={...docCertStatuses,[String(i)]:v};  setDocCertStatuses(n);  persist({docCertStatuses:n}); };
-  const updDocRereg    = (i,v)  => { const n={...docReregStatuses,[String(i)]:v}; setDocReregStatuses(n); persist({docReregStatuses:n}); };
-
-  // 완료 핸들러
-  const toggleTask = (id) => { const n={...taskDone,[id]:!taskDone[id]}; setTaskDone(n); persist({taskDone:n}); };
-  const toggleExt  = (id) => { const n={...extDone,[id]:!extDone[id]};   setExtDone(n);  persist({extDone:n}); };
-  const toggleDoc  = (k)  => { const n={...docDone,[k]:!docDone[k]};     setDocDone(n);  persist({docDone:n}); };
-
-  // 메모 핸들러
   const saveMemo = () => {
-    const n={...memos,[tab]:memoTemp};
-    setMemos(n); setMemoEdit(false); persist({memos:n});
+    const n = { ...memos, [tab]: memoTemp };
+    setMemos(n); setMemoEdit(false); persist({ memos: n });
+  };
+  const saveExtAction = () => {
+    const n = { ...memos, extAction: extActionTemp };
+    setMemos(n); setExtActionEdit(false); persist({ memos: n });
   };
 
-  // 항목 수정
   const startEdit = (sectionKey, itemKey, item) => {
     setEditingKey(`${sectionKey}:${itemKey}`);
-    setEditForm({ name:item.name||"", note:item.note||"", owner:item.owner||item.target||"", due:item.due||"" });
+    setEditForm({ name: item.name || "", note: item.note || "", owner: item.owner || item.target || "", due: item.due || "" });
   };
   const saveEdit = (sectionKey, itemKey, isCustom) => {
     if (isCustom) {
-      const n={...custom,[sectionKey]:{...custom[sectionKey],[itemKey]:{...(custom[sectionKey][itemKey]||{}),...editForm}}};
-      setCustom(n); persist({custom:n});
+      const n = { ...custom, [sectionKey]: { ...custom[sectionKey], [itemKey]: { ...(custom[sectionKey][itemKey] || {}), ...editForm } } };
+      setCustom(n); persist({ custom: n });
     } else {
-      const n={...edits,[sectionKey]:{...edits[sectionKey],[itemKey]:editForm}};
-      setEdits(n); persist({edits:n});
+      const n = { ...edits, [sectionKey]: { ...edits[sectionKey], [itemKey]: editForm } };
+      setEdits(n); persist({ edits: n });
     }
     setEditingKey(null);
   };
 
-  // 항목 추가
   const addItem = (section) => {
     if (!newItem.name) return;
     const k = Date.now().toString();
     const isDoc = section.startsWith("doc");
     const item = {
-      id: newItem.id||`C-${k.slice(-4)}`,
-      name: newItem.name, note: newItem.note||"",
-      owner: newItem.owner||"", target: newItem.target||"",
-      status: newItem.status||(isDoc?"수급예정":"기획필요"),
-      due: newItem.due||"", no: newItem.no||""
+      id: newItem.id || `C-${k.slice(-4)}`, name: newItem.name, note: newItem.note || "",
+      owner: newItem.owner || "", target: newItem.target || "",
+      status: newItem.status || (isDoc ? "수급예정" : "기획필요"),
+      due: newItem.due || "", no: newItem.no || ""
     };
-    const n={...custom,[section]:{...custom[section],[k]:item}};
-    setCustom(n); persist({custom:n});
+    const n = { ...custom, [section]: { ...custom[section], [k]: item } };
+    setCustom(n); persist({ custom: n });
     setAddingTo(null); setNewItem({});
   };
 
-  // 커스텀 항목 삭제
   const deleteCustom = (section, key) => {
-    const {[key]:_,...rest} = custom[section];
-    const n={...custom,[section]:rest};
-    setCustom(n); persist({custom:n});
+    const { [key]: _, ...rest } = custom[section];
+    const n = { ...custom, [section]: rest };
+    setCustom(n); persist({ custom: n });
   };
 
-  // 병합 헬퍼
-  const mergeEdit = (section, key, base) => ({ ...base, ...(edits[section]?.[key]||{}) });
+  const mergeEdit = (section, key, base) => ({ ...base, ...(edits[section]?.[key] || {}) });
 
   // 계산
   const totalDev = BASE_DEV_P0.length + BASE_DEV_P1.length + BASE_DEV_P2.length
-    + Object.keys(custom.devP0||{}).length + Object.keys(custom.devP1||{}).length + Object.keys(custom.devP2||{}).length;
+    + Object.keys(custom.devP0 || {}).length + Object.keys(custom.devP1 || {}).length + Object.keys(custom.devP2 || {}).length;
   const doneCount    = Object.values(taskDone).filter(Boolean).length;
   const extDoneCount = Object.values(extDone).filter(Boolean).length;
-  const totalExt     = BASE_EXTERNAL.length + Object.keys(custom.ext||{}).length;
+  const totalExt     = BASE_EXTERNAL.length + Object.keys(custom.ext || {}).length;
   const docDoneCount = Object.values(docDone).filter(Boolean).length;
   const totalDocs    = BASE_DOCS_CERT.length + BASE_DOCS_REREG.length
-    + Object.keys(custom.docCert||{}).length + Object.keys(custom.docRereg||{}).length;
+    + Object.keys(custom.docCert || {}).length + Object.keys(custom.docRereg || {}).length;
 
-  const devSection    = devFilter==="P0"?"devP0":devFilter==="P1"?"devP1":"devP2";
-  const devBaseItems  = devFilter==="P0"?BASE_DEV_P0:devFilter==="P1"?BASE_DEV_P1:BASE_DEV_P2;
-  const devCustomList = Object.entries(custom[devSection]||{});
-
-  // ── 공통 컴포넌트 함수 ────────────────────────────────────
-
-  const StatusSelect = ({value, options, styleMap, onChange}) => (
-    <select
-      value={value||""}
-      onChange={e=>{e.stopPropagation();onChange(e.target.value);}}
-      onClick={e=>e.stopPropagation()}
-      className={`text-[10px] px-2 py-0.5 rounded-full font-medium cursor-pointer border-0 focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-slate-400 ${styleMap[value]||"bg-slate-100 text-slate-500"}`}
-    >
-      {options.map(o=><option key={o} value={o}>{o}</option>)}
-    </select>
-  );
-
-  const EditInline = ({onSave, onCancel, showOwner=true, showDue=false, showTarget=false}) => (
-    <div className="flex-1 space-y-1.5 py-0.5">
-      <input value={editForm.name} onChange={e=>setEditForm(p=>({...p,name:e.target.value}))}
-        placeholder="항목명" className="w-full text-sm border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400" />
-      <input value={editForm.note} onChange={e=>setEditForm(p=>({...p,note:e.target.value}))}
-        placeholder="비고" className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400" />
-      {(showOwner||showTarget) && (
-        <input value={editForm.owner} onChange={e=>setEditForm(p=>({...p,owner:e.target.value}))}
-          placeholder={showTarget?"확인 대상":"담당자"} className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400" />
-      )}
-      {showDue && (
-        <input value={editForm.due} onChange={e=>setEditForm(p=>({...p,due:e.target.value}))}
-          placeholder="마감일 (예: 7/14)" className="w-full text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400" />
-      )}
-      <div className="flex gap-1.5 pt-0.5">
-        <button onClick={onSave} className="text-xs bg-slate-900 text-white px-3 py-1 rounded">저장</button>
-        <button onClick={onCancel} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">취소</button>
-      </div>
-    </div>
-  );
-
-  const AddForm = ({section, options, showOwner=true, showDue=false, showTarget=false}) => (
-    addingTo === section ? (
-      <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
-        <div className="grid grid-cols-2 gap-2">
-          <input value={newItem.id||""} onChange={e=>setNewItem(p=>({...p,id:e.target.value}))}
-            placeholder="ID (예: DEV-30)" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none" />
-          <input value={newItem.name||""} onChange={e=>setNewItem(p=>({...p,name:e.target.value}))}
-            placeholder="항목명 *" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none" />
-          {showOwner && <input value={newItem.owner||""} onChange={e=>setNewItem(p=>({...p,owner:e.target.value}))}
-            placeholder="담당자" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none" />}
-          {showTarget && <input value={newItem.target||""} onChange={e=>setNewItem(p=>({...p,target:e.target.value}))}
-            placeholder="확인 대상" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none" />}
-          {showDue && <input value={newItem.due||""} onChange={e=>setNewItem(p=>({...p,due:e.target.value}))}
-            placeholder="마감 (예: 7/14)" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none" />}
-          <input value={newItem.note||""} onChange={e=>setNewItem(p=>({...p,note:e.target.value}))}
-            placeholder="비고" className="text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none col-span-2" />
-        </div>
-        <div className="flex gap-2 items-center">
-          <select value={newItem.status||(section.startsWith("doc")?"수급예정":"기획필요")}
-            onChange={e=>setNewItem(p=>({...p,status:e.target.value}))}
-            className="text-xs border border-slate-300 rounded px-2 py-1">
-            {options.map(o=><option key={o} value={o}>{o}</option>)}
-          </select>
-          <button onClick={()=>addItem(section)} className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded">추가</button>
-          <button onClick={()=>{setAddingTo(null);setNewItem({});}} className="text-xs bg-slate-100 text-slate-600 px-2 py-1.5 rounded">취소</button>
-        </div>
-      </div>
-    ) : (
-      <button onClick={()=>setAddingTo(section)}
-        className="mt-3 w-full text-xs text-slate-400 border border-dashed border-slate-300 rounded-lg py-2.5 hover:bg-slate-50 hover:text-slate-600 transition-colors">
-        + 항목 추가
-      </button>
-    )
-  );
+  const devSection    = devFilter === "P0" ? "devP0" : devFilter === "P1" ? "devP1" : "devP2";
+  const devBaseItems  = devFilter === "P0" ? BASE_DEV_P0 : devFilter === "P1" ? BASE_DEV_P1 : BASE_DEV_P2;
+  const devCustomList = Object.entries(custom[devSection] || {});
 
   // ── 렌더 ─────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-slate-50" style={{fontFamily:"'Apple SD Gothic Neo','Malgun Gothic',sans-serif"}}>
+    <div className="min-h-screen bg-slate-50" style={{ fontFamily: "'Apple SD Gothic Neo','Malgun Gothic',sans-serif" }}>
 
       {/* 헤더 */}
       <header className="bg-slate-900 text-white px-4 py-5">
@@ -338,15 +357,13 @@ export default function App() {
               <p className="text-slate-400 text-[11px] tracking-widest uppercase mb-1">HiClass · 규제대응 · 2026</p>
               <h1 className="text-lg font-bold">📡 전송자격인증 & 특부가 재등록</h1>
               <p className="text-slate-400 text-xs mt-0.5">전기통신사업법 제22조의11 · 법정기한 2026.10.27</p>
-              <p className={`text-[10px] mt-1 ${isConfigured ? "text-emerald-400" : "text-slate-500"}`}>
-                💾 {fbStatus}
-              </p>
+              <p className={`text-[10px] mt-1 ${isConfigured ? "text-emerald-400" : "text-slate-500"}`}>💾 {fbStatus}</p>
             </div>
             <div className="flex gap-3">
               {[
-                { label:"전송자격 신청", date:"7/30",  days:28,  color:"text-amber-400" },
-                { label:"특부가 재등록", date:"9/19",  days:79,  color:"text-orange-400" },
-                { label:"법정 데드라인", date:"10/27", days:117, color:"text-red-400" },
+                { label: "전송자격 신청", date: "7/30",  days: 28,  color: "text-amber-400" },
+                { label: "특부가 재등록", date: "9/19",  days: 79,  color: "text-orange-400" },
+                { label: "법정 데드라인", date: "10/27", days: 117, color: "text-red-400" },
               ].map(m => (
                 <div key={m.label} className="text-center">
                   <div className={`text-2xl font-black ${m.color}`}>D-{m.days}</div>
@@ -357,14 +374,13 @@ export default function App() {
             </div>
           </div>
 
-          {/* 진행률 */}
           <div className="mt-4 grid grid-cols-3 gap-4">
             {[
-              { label:"개발항목 완료", done:doneCount,    total:totalDev,  color:"bg-blue-400" },
-              { label:"외부확인 완료", done:extDoneCount, total:totalExt,  color:"bg-violet-400" },
-              { label:"서류 준비 완료", done:docDoneCount, total:totalDocs, color:"bg-emerald-400" },
+              { label: "개발항목 완료", done: doneCount,    total: totalDev,  color: "bg-blue-400" },
+              { label: "외부확인 완료", done: extDoneCount, total: totalExt,  color: "bg-violet-400" },
+              { label: "서류 준비 완료", done: docDoneCount, total: totalDocs, color: "bg-emerald-400" },
             ].map(b => {
-              const pct = b.total ? Math.round((b.done/b.total)*100) : 0;
+              const pct = b.total ? Math.round((b.done / b.total) * 100) : 0;
               return (
                 <div key={b.label}>
                   <div className="flex justify-between text-[10px] text-slate-400 mb-1">
@@ -372,7 +388,7 @@ export default function App() {
                     <span className="text-white font-semibold">{b.done}/{b.total}</span>
                   </div>
                   <div className="h-1 bg-slate-700 rounded-full">
-                    <div className={`h-1 rounded-full ${b.color}`} style={{width:`${pct}%`}}/>
+                    <div className={`h-1 rounded-full ${b.color}`} style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
@@ -398,14 +414,12 @@ export default function App() {
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
         <div className="max-w-4xl mx-auto px-4 flex">
           {[
-            { id:"dev",  label:"🔴 개발 우선순위" },
-            { id:"ext",  label:"📞 외부 확인 현황" },
-            { id:"docs", label:"📁 서류 준비 현황" },
+            { id: "dev",  label: "🔴 개발 우선순위" },
+            { id: "ext",  label: "📞 외부 확인 현황" },
+            { id: "docs", label: "📁 서류 준비 현황" },
           ].map(t => (
             <button key={t.id} onClick={() => { setTab(t.id); setMemoEdit(false); }}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                tab===t.id ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"
-              }`}>
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${tab === t.id ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
               {t.label}
             </button>
           ))}
@@ -414,27 +428,27 @@ export default function App() {
 
       <main className="max-w-4xl mx-auto px-4 py-5">
 
-        {/* ── 탭별 메모 ── */}
+        {/* 탭별 메모 */}
         <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 flex items-center gap-3">
           <span className="text-blue-400 text-sm shrink-0">📝</span>
           {memoEdit ? (
             <>
               <input autoFocus value={memoTemp}
-                onChange={e=>setMemoTemp(e.target.value)}
-                onKeyDown={e=>e.key==="Enter"&&saveMemo()}
+                onChange={e => setMemoTemp(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && saveMemo()}
                 placeholder="공유사항을 입력하세요 (최대 150자)"
                 maxLength={150}
                 className="flex-1 text-sm bg-transparent border-b border-blue-300 focus:outline-none focus:border-blue-500 text-slate-700 placeholder-blue-300"
               />
               <button onClick={saveMemo} className="text-xs bg-blue-600 text-white px-3 py-1 rounded shrink-0">저장</button>
-              <button onClick={()=>setMemoEdit(false)} className="text-xs text-blue-400 shrink-0">취소</button>
+              <button onClick={() => setMemoEdit(false)} className="text-xs text-blue-400 shrink-0">취소</button>
             </>
           ) : (
             <>
               <span className="flex-1 text-sm text-slate-700">
                 {memos[tab] || <span className="text-blue-300 italic">공유사항을 작성해주세요</span>}
               </span>
-              <button onClick={()=>{setMemoTemp(memos[tab]);setMemoEdit(true);}}
+              <button onClick={() => { setMemoTemp(memos[tab]); setMemoEdit(true); }}
                 className="text-xs text-blue-500 border border-blue-200 px-2.5 py-1 rounded hover:bg-blue-100 shrink-0">
                 ✏️ 작성
               </button>
@@ -445,135 +459,122 @@ export default function App() {
         {/* ── 개발 우선순위 탭 ── */}
         {tab === "dev" && (
           <div>
-            {/* P0/P1/P2 필터 */}
             <div className="flex gap-2 mb-4">
               {[
-                { key:"P0", label:`P0 필수 (${BASE_DEV_P0.length + Object.keys(custom.devP0||{}).length})`, color:"bg-red-100 text-red-700 border-red-200" },
-                { key:"P1", label:`P1 중요 (${BASE_DEV_P1.length + Object.keys(custom.devP1||{}).length})`, color:"bg-amber-100 text-amber-700 border-amber-200" },
-                { key:"P2", label:`P2 보완 (${BASE_DEV_P2.length + Object.keys(custom.devP2||{}).length})`, color:"bg-blue-100 text-blue-700 border-blue-200" },
+                { key: "P0", label: `P0 필수 (${BASE_DEV_P0.length + Object.keys(custom.devP0 || {}).length})`, color: "bg-red-100 text-red-700 border-red-200" },
+                { key: "P1", label: `P1 중요 (${BASE_DEV_P1.length + Object.keys(custom.devP1 || {}).length})`, color: "bg-amber-100 text-amber-700 border-amber-200" },
+                { key: "P2", label: `P2 보완 (${BASE_DEV_P2.length + Object.keys(custom.devP2 || {}).length})`, color: "bg-blue-100 text-blue-700 border-blue-200" },
               ].map(f => (
-                <button key={f.key} onClick={()=>setDevFilter(f.key)}
-                  className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-all ${f.color} ${devFilter===f.key?"ring-2 ring-offset-1 ring-current":"opacity-60"}`}>
+                <button key={f.key} onClick={() => setDevFilter(f.key)}
+                  className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-all ${f.color} ${devFilter === f.key ? "ring-2 ring-offset-1 ring-current" : "opacity-60"}`}>
                   {f.label}
                 </button>
               ))}
             </div>
 
-            <div className={`mb-3 text-xs font-bold px-3 py-1 rounded inline-block ${
-              devFilter==="P0"?"bg-red-600 text-white":devFilter==="P1"?"bg-amber-500 text-white":"bg-blue-600 text-white"
-            }`}>
-              {devFilter==="P0"?"🚨 신청일(7/30) 전 완료 필수":devFilter==="P1"?"⚡ 신청 후 심사 기간 내 대응 가능":"📋 소명·보완 항목"}
+            <div className={`mb-3 text-xs font-bold px-3 py-1 rounded inline-block ${devFilter === "P0" ? "bg-red-600 text-white" : devFilter === "P1" ? "bg-amber-500 text-white" : "bg-blue-600 text-white"}`}>
+              {devFilter === "P0" ? "🚨 신청일(7/30) 전 완료 필수" : devFilter === "P1" ? "⚡ 신청 후 심사 기간 내 대응 가능" : "📋 소명·보완 항목"}
             </div>
 
             <div className="space-y-2">
-              {/* 헤더 */}
               <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-50 rounded text-[10px] text-slate-400">
-                <span className="w-5 shrink-0"/>
+                <span className="w-5 shrink-0" />
                 <span className="w-16 shrink-0">DEV#</span>
                 <span className="flex-1">개발 항목</span>
-                <span className="w-20 shrink-0 text-right hidden sm:block">담당</span>
+                <span className="w-24 shrink-0 text-right hidden sm:block">담당</span>
                 <span className="w-24 shrink-0 text-right">현행 상태</span>
-                <span className="w-10 shrink-0"/>
+                <span className="w-10 shrink-0" />
               </div>
 
-              {/* 기본 항목 */}
               {devBaseItems.map(baseItem => {
                 const item = mergeEdit(devSection, baseItem.id, baseItem);
-                const done = taskDone[baseItem.id]||false;
-                const status = devStatuses[baseItem.id]||baseItem.status;
+                const done = taskDone[baseItem.id] || false;
+                const status = devStatuses[baseItem.id] || baseItem.status;
+                const owner = devOwners[baseItem.id] || baseItem.owner;
                 const eKey = `${devSection}:${baseItem.id}`;
                 const isEditing = editingKey === eKey;
                 return (
-                  <div key={baseItem.id} className={`flex items-start gap-3 px-4 py-3 bg-white border rounded-lg transition-all ${
-                    done?"opacity-50 border-slate-200":baseItem.risk?"border-red-200":"border-slate-200"
-                  }`}>
-                    <div className="cursor-pointer shrink-0 mt-0.5" onClick={()=>toggleTask(baseItem.id)}>
-                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done?"bg-emerald-500 border-emerald-500":"border-slate-300"}`}>
-                        {done&&<span className="text-white text-[9px] font-bold">✓</span>}
+                  <div key={baseItem.id} className={`flex items-start gap-3 px-4 py-3 bg-white border rounded-lg transition-all ${done ? "opacity-50 border-slate-200" : baseItem.risk ? "border-red-200" : "border-slate-200"}`}>
+                    <div className="cursor-pointer shrink-0 mt-0.5" onClick={() => toggleTask(baseItem.id)}>
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                        {done && <span className="text-white text-[9px] font-bold">✓</span>}
                       </div>
                     </div>
                     <span className="text-xs font-mono text-slate-400 w-16 shrink-0 pt-0.5">{baseItem.id}</span>
                     {isEditing ? (
-                      <EditInline showOwner={true}
-                        onSave={()=>saveEdit(devSection,baseItem.id,false)}
-                        onCancel={()=>setEditingKey(null)} />
+                      <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true}
+                        onSave={() => saveEdit(devSection, baseItem.id, false)}
+                        onCancel={() => setEditingKey(null)} />
                     ) : (
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm ${done?"line-through text-slate-400":"text-slate-800"}`}>
+                        <p className={`text-sm ${done ? "line-through text-slate-400" : "text-slate-800"}`}>
                           {item.name}
-                          {baseItem.risk&&<span className="ml-1.5 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium">⚠ 리스크</span>}
+                          {baseItem.risk && <span className="ml-1.5 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium">⚠ 리스크</span>}
                         </p>
                         <p className="text-[11px] text-slate-400 mt-0.5">{item.note}</p>
                       </div>
                     )}
-                    {!isEditing&&<>
-                      <select
-                        value={devOwners[baseItem.id]||item.owner}
-                        onChange={e=>{e.stopPropagation();updDevOwner(baseItem.id,e.target.value);}}
-                        onClick={e=>e.stopPropagation()}
-                        className="text-xs text-slate-500 w-24 shrink-0 hidden sm:block border border-slate-200 rounded px-1 py-0.5 bg-white cursor-pointer focus:outline-none focus:border-blue-400"
-                      >
-                        {OWNER_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}
+                    {!isEditing && <>
+                      <select value={owner} onChange={e => { e.stopPropagation(); updDevOwner(baseItem.id, e.target.value); }} onClick={e => e.stopPropagation()}
+                        className="text-xs text-slate-500 w-24 shrink-0 hidden sm:block border border-slate-200 rounded px-1 py-0.5 bg-white cursor-pointer focus:outline-none focus:border-blue-400">
+                        {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                       <div className="w-24 shrink-0 flex justify-end">
-                        <StatusSelect value={status} options={DEV_STATUS_OPTIONS} styleMap={STATUS_STYLE} onChange={v=>updDevStatus(baseItem.id,v)} />
+                        <StatusSelect value={status} options={DEV_STATUS_OPTIONS} styleMap={STATUS_STYLE} onChange={v => updDevStatus(baseItem.id, v)} />
                       </div>
-                      <div className="w-10 shrink-0 flex justify-end gap-1">
-                        <button onClick={e=>{e.stopPropagation();startEdit(devSection,baseItem.id,baseItem);}}
-                          className="text-slate-300 hover:text-blue-400 text-xs" title="수정">✏️</button>
+                      <div className="w-10 shrink-0 flex justify-end">
+                        <button onClick={e => { e.stopPropagation(); startEdit(devSection, baseItem.id, baseItem); }}
+                          className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
                       </div>
                     </>}
                   </div>
                 );
               })}
 
-              {/* 커스텀 항목 */}
-              {devCustomList.map(([k,baseItem]) => {
+              {devCustomList.map(([k, baseItem]) => {
                 const item = mergeEdit(devSection, k, baseItem);
-                const done = taskDone[baseItem.id]||false;
-                const status = devStatuses[baseItem.id]||baseItem.status||"기획필요";
+                const done = taskDone[baseItem.id] || false;
+                const status = devStatuses[baseItem.id] || baseItem.status || "기획필요";
+                const owner = devOwners[baseItem.id] || baseItem.owner || "개발";
                 const eKey = `${devSection}:${k}`;
                 const isEditing = editingKey === eKey;
                 return (
-                  <div key={k} className={`flex items-start gap-3 px-4 py-3 bg-white border border-dashed rounded-lg transition-all ${done?"opacity-50 border-slate-200":"border-slate-300"}`}>
-                    <div className="cursor-pointer shrink-0 mt-0.5" onClick={()=>toggleTask(baseItem.id)}>
-                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done?"bg-emerald-500 border-emerald-500":"border-slate-300"}`}>
-                        {done&&<span className="text-white text-[9px] font-bold">✓</span>}
+                  <div key={k} className={`flex items-start gap-3 px-4 py-3 bg-white border border-dashed rounded-lg transition-all ${done ? "opacity-50 border-slate-200" : "border-slate-300"}`}>
+                    <div className="cursor-pointer shrink-0 mt-0.5" onClick={() => toggleTask(baseItem.id)}>
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                        {done && <span className="text-white text-[9px] font-bold">✓</span>}
                       </div>
                     </div>
                     <span className="text-xs font-mono text-slate-400 w-16 shrink-0 pt-0.5">{item.id}</span>
                     {isEditing ? (
-                      <EditInline showOwner={true}
-                        onSave={()=>saveEdit(devSection,k,true)}
-                        onCancel={()=>setEditingKey(null)} />
+                      <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true}
+                        onSave={() => saveEdit(devSection, k, true)}
+                        onCancel={() => setEditingKey(null)} />
                     ) : (
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm ${done?"line-through text-slate-400":"text-slate-800"}`}>{item.name}</p>
+                        <p className={`text-sm ${done ? "line-through text-slate-400" : "text-slate-800"}`}>{item.name}</p>
                         <p className="text-[11px] text-slate-400 mt-0.5">{item.note}</p>
                       </div>
                     )}
-                    {!isEditing&&<>
-                      <select
-                        value={devOwners[baseItem.id]||item.owner||"개발"}
-                        onChange={e=>{e.stopPropagation();updDevOwner(baseItem.id,e.target.value);}}
-                        onClick={e=>e.stopPropagation()}
-                        className="text-xs text-slate-500 w-24 shrink-0 hidden sm:block border border-slate-200 rounded px-1 py-0.5 bg-white cursor-pointer focus:outline-none focus:border-blue-400"
-                      >
-                        {OWNER_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}
+                    {!isEditing && <>
+                      <select value={owner} onChange={e => { e.stopPropagation(); updDevOwner(baseItem.id, e.target.value); }} onClick={e => e.stopPropagation()}
+                        className="text-xs text-slate-500 w-24 shrink-0 hidden sm:block border border-slate-200 rounded px-1 py-0.5 bg-white cursor-pointer focus:outline-none focus:border-blue-400">
+                        {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                       <div className="w-24 shrink-0 flex justify-end">
-                        <StatusSelect value={status} options={DEV_STATUS_OPTIONS} styleMap={STATUS_STYLE} onChange={v=>updDevStatus(baseItem.id,v)} />
+                        <StatusSelect value={status} options={DEV_STATUS_OPTIONS} styleMap={STATUS_STYLE} onChange={v => updDevStatus(baseItem.id, v)} />
                       </div>
                       <div className="w-10 shrink-0 flex justify-end gap-1">
-                        <button onClick={e=>{e.stopPropagation();startEdit(devSection,k,baseItem);}} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                        <button onClick={e=>{e.stopPropagation();deleteCustom(devSection,k);}} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
+                        <button onClick={e => { e.stopPropagation(); startEdit(devSection, k, baseItem); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                        <button onClick={e => { e.stopPropagation(); deleteCustom(devSection, k); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
                       </div>
                     </>}
                   </div>
                 );
               })}
             </div>
-            <AddForm section={devSection} options={DEV_STATUS_OPTIONS} showOwner={true} />
+            <AddForm section={devSection} options={DEV_STATUS_OPTIONS} showOwner={true}
+              addingTo={addingTo} setAddingTo={setAddingTo} newItem={newItem} setNewItem={setNewItem} onAdd={() => addItem(devSection)} />
           </div>
         )}
 
@@ -584,103 +585,103 @@ export default function App() {
               {extActionEdit ? (
                 <>
                   <input autoFocus value={extActionTemp}
-                    onChange={e=>setExtActionTemp(e.target.value)}
-                    onKeyDown={e=>e.key==="Enter"&&saveExtAction()}
-                    className="flex-1 bg-transparent border-b border-amber-400 focus:outline-none text-sm text-amber-900 placeholder-amber-400"
+                    onChange={e => setExtActionTemp(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && saveExtAction()}
+                    className="flex-1 bg-transparent border-b border-amber-400 focus:outline-none text-sm text-amber-900"
                     placeholder="이번 주 액션 메시지 입력"
                   />
                   <button onClick={saveExtAction} className="text-xs bg-amber-600 text-white px-2 py-0.5 rounded shrink-0">저장</button>
-                  <button onClick={()=>setExtActionEdit(false)} className="text-xs text-amber-600 shrink-0">취소</button>
+                  <button onClick={() => setExtActionEdit(false)} className="text-xs text-amber-600 shrink-0">취소</button>
                 </>
               ) : (
                 <>
                   <span className="flex-1"><strong>이번 주 액션:</strong> {memos.extAction}</span>
-                  <button onClick={()=>{setExtActionTemp(memos.extAction);setExtActionEdit(true);}} className="text-xs text-amber-600 border border-amber-300 px-2 py-0.5 rounded hover:bg-amber-100 shrink-0">✏️</button>
+                  <button onClick={() => { setExtActionTemp(memos.extAction); setExtActionEdit(true); }}
+                    className="text-xs text-amber-600 border border-amber-300 px-2 py-0.5 rounded hover:bg-amber-100 shrink-0">✏️</button>
                 </>
               )}
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
               <div className="flex gap-3 px-4 py-2 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400">
-                <span className="w-5 shrink-0"/>
-                <span className="w-14 shrink-0">DEV#</span>
+                <span className="w-5 shrink-0" /><span className="w-14 shrink-0">DEV#</span>
                 <span className="flex-1">확인 항목</span>
                 <span className="w-20 shrink-0 text-right hidden sm:block">확인 대상</span>
                 <span className="w-24 shrink-0 text-right">상태</span>
-                <span className="w-10 shrink-0"/>
+                <span className="w-10 shrink-0" />
               </div>
               <div className="divide-y divide-slate-100">
                 {BASE_EXTERNAL.map(baseItem => {
                   const item = mergeEdit("ext", baseItem.id, baseItem);
-                  const done = extDone[baseItem.id]||false;
-                  const status = extStatuses[baseItem.id]||baseItem.status;
+                  const done = extDone[baseItem.id] || false;
+                  const status = extStatuses[baseItem.id] || baseItem.status;
                   const eKey = `ext:${baseItem.id}`;
                   const isEditing = editingKey === eKey;
                   return (
-                    <div key={baseItem.id} className={`flex items-start gap-3 px-4 py-3 transition-colors ${done?"opacity-50 bg-slate-50":""}`}>
-                      <div className="cursor-pointer shrink-0 mt-0.5" onClick={()=>toggleExt(baseItem.id)}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done?"bg-emerald-500 border-emerald-500":"border-slate-300"}`}>
-                          {done&&<span className="text-white text-[9px] font-bold">✓</span>}
+                    <div key={baseItem.id} className={`flex items-start gap-3 px-4 py-3 transition-colors ${done ? "opacity-50 bg-slate-50" : ""}`}>
+                      <div className="cursor-pointer shrink-0 mt-0.5" onClick={() => toggleExt(baseItem.id)}>
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                          {done && <span className="text-white text-[9px] font-bold">✓</span>}
                         </div>
                       </div>
                       <span className="text-xs font-mono text-slate-400 w-14 shrink-0 pt-0.5">{baseItem.id}</span>
                       {isEditing ? (
-                        <EditInline showTarget={true}
-                          onSave={()=>saveEdit("ext",baseItem.id,false)}
-                          onCancel={()=>setEditingKey(null)} />
+                        <EditInline editForm={editForm} setEditForm={setEditForm} showTarget={true}
+                          onSave={() => saveEdit("ext", baseItem.id, false)}
+                          onCancel={() => setEditingKey(null)} />
                       ) : (
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm ${done?"line-through text-slate-400":"text-slate-800"}`}>
+                          <p className={`text-sm ${done ? "line-through text-slate-400" : "text-slate-800"}`}>
                             {item.name}
-                            {baseItem.risk&&<span className="ml-1.5 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium">⚠</span>}
+                            {baseItem.risk && <span className="ml-1.5 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-medium">⚠</span>}
                           </p>
                           <p className="text-[11px] text-slate-400 mt-0.5">{item.note}</p>
                         </div>
                       )}
-                      {!isEditing&&<>
-                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner||baseItem.target}</span>
+                      {!isEditing && <>
+                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner || baseItem.target}</span>
                         <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={EXT_STATUS_OPTIONS} styleMap={EXT_STATUS_STYLE} onChange={v=>updExtStatus(baseItem.id,v)} />
+                          <StatusSelect value={status} options={EXT_STATUS_OPTIONS} styleMap={EXT_STATUS_STYLE} onChange={v => updExtStatus(baseItem.id, v)} />
                         </div>
                         <div className="w-10 shrink-0 flex justify-end">
-                          <button onClick={e=>{e.stopPropagation();startEdit("ext",baseItem.id,baseItem);}} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                          <button onClick={e => { e.stopPropagation(); startEdit("ext", baseItem.id, baseItem); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
                         </div>
                       </>}
                     </div>
                   );
                 })}
-                {Object.entries(custom.ext||{}).map(([k,baseItem]) => {
+                {Object.entries(custom.ext || {}).map(([k, baseItem]) => {
                   const item = mergeEdit("ext", k, baseItem);
-                  const done = extDone[baseItem.id]||false;
-                  const status = extStatuses[baseItem.id]||baseItem.status||"미문의";
+                  const done = extDone[baseItem.id] || false;
+                  const status = extStatuses[baseItem.id] || baseItem.status || "미문의";
                   const eKey = `ext:${k}`;
                   const isEditing = editingKey === eKey;
                   return (
-                    <div key={k} className={`flex items-start gap-3 px-4 py-3 bg-slate-50/50 transition-colors ${done?"opacity-50":""}`}>
-                      <div className="cursor-pointer shrink-0 mt-0.5" onClick={()=>toggleExt(baseItem.id)}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done?"bg-emerald-500 border-emerald-500":"border-slate-300"}`}>
-                          {done&&<span className="text-white text-[9px] font-bold">✓</span>}
+                    <div key={k} className={`flex items-start gap-3 px-4 py-3 bg-slate-50/50 transition-colors ${done ? "opacity-50" : ""}`}>
+                      <div className="cursor-pointer shrink-0 mt-0.5" onClick={() => toggleExt(baseItem.id)}>
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                          {done && <span className="text-white text-[9px] font-bold">✓</span>}
                         </div>
                       </div>
                       <span className="text-xs font-mono text-slate-400 w-14 shrink-0 pt-0.5">{item.id}</span>
                       {isEditing ? (
-                        <EditInline showTarget={true}
-                          onSave={()=>saveEdit("ext",k,true)}
-                          onCancel={()=>setEditingKey(null)} />
+                        <EditInline editForm={editForm} setEditForm={setEditForm} showTarget={true}
+                          onSave={() => saveEdit("ext", k, true)}
+                          onCancel={() => setEditingKey(null)} />
                       ) : (
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm ${done?"line-through text-slate-400":"text-slate-800"}`}>{item.name}</p>
+                          <p className={`text-sm ${done ? "line-through text-slate-400" : "text-slate-800"}`}>{item.name}</p>
                           <p className="text-[11px] text-slate-400 mt-0.5">{item.note}</p>
                         </div>
                       )}
-                      {!isEditing&&<>
-                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner||item.target}</span>
+                      {!isEditing && <>
+                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner || item.target}</span>
                         <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={EXT_STATUS_OPTIONS} styleMap={EXT_STATUS_STYLE} onChange={v=>updExtStatus(baseItem.id,v)} />
+                          <StatusSelect value={status} options={EXT_STATUS_OPTIONS} styleMap={EXT_STATUS_STYLE} onChange={v => updExtStatus(baseItem.id, v)} />
                         </div>
                         <div className="w-10 shrink-0 flex justify-end gap-1">
-                          <button onClick={e=>{e.stopPropagation();startEdit("ext",k,baseItem);}} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                          <button onClick={e=>{e.stopPropagation();deleteCustom("ext",k);}} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
+                          <button onClick={e => { e.stopPropagation(); startEdit("ext", k, baseItem); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                          <button onClick={e => { e.stopPropagation(); deleteCustom("ext", k); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
                         </div>
                       </>}
                     </div>
@@ -688,20 +689,20 @@ export default function App() {
                 })}
               </div>
               <div className="px-4 pb-3 pt-1">
-                <AddForm section="ext" options={EXT_STATUS_OPTIONS} showTarget={true} />
+                <AddForm section="ext" options={EXT_STATUS_OPTIONS} showTarget={true}
+                  addingTo={addingTo} setAddingTo={setAddingTo} newItem={newItem} setNewItem={setNewItem} onAdd={() => addItem("ext")} />
               </div>
             </div>
 
-            {/* 연락처 */}
             <div className="bg-white border border-slate-200 rounded-xl px-4 py-4">
               <h3 className="text-xs font-semibold text-slate-600 mb-3">📌 주요 연락처</h3>
               <div className="space-y-2">
                 {[
-                  { label:"전송자격인증 신청·접수", contact:"antispam@korea.kr",  note:"방송미디어통신위원회" },
-                  { label:"인증심사 기술지원",       contact:"srt@kisa.or.kr",    note:"KISA" },
-                  { label:"식별코드 삽입·위변조",    contact:"numbers@kisa.or.kr", note:"KISA" },
-                  { label:"X-ray 악성문자 차단",     contact:"x-ray@kisa.or.kr",  note:"KISA" },
-                  { label:"KTOA 이용증명원",         contact:"snb.ktoa.or.kr",    note:"한국통신사업자연합회" },
+                  { label: "전송자격인증 신청·접수", contact: "antispam@korea.kr",  note: "방송미디어통신위원회" },
+                  { label: "인증심사 기술지원",       contact: "srt@kisa.or.kr",    note: "KISA" },
+                  { label: "식별코드 삽입·위변조",    contact: "numbers@kisa.or.kr", note: "KISA" },
+                  { label: "X-ray 악성문자 차단",     contact: "x-ray@kisa.or.kr",  note: "KISA" },
+                  { label: "KTOA 이용증명원",         contact: "snb.ktoa.or.kr",    note: "한국통신사업자연합회" },
                 ].map(c => (
                   <div key={c.contact} className="flex items-center gap-3">
                     <span className="text-xs text-slate-500 w-36 shrink-0">{c.label}</span>
@@ -717,7 +718,6 @@ export default function App() {
         {/* ── 서류 준비 현황 탭 ── */}
         {tab === "docs" && (
           <div className="space-y-4">
-            {/* 전송자격인증 서류 */}
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
               <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
                 <div>
@@ -725,89 +725,88 @@ export default function App() {
                   <p className="text-xs text-amber-700 mt-0.5">제출처: antispam@korea.kr · 신청 목표: 7/30</p>
                 </div>
                 <span className="text-xs font-medium bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                  {BASE_DOCS_CERT.filter((_,i)=>docDone["c"+i]).length + Object.keys(custom.docCert||{}).filter(k=>docDone["cc"+k]).length}
-                  /{BASE_DOCS_CERT.length + Object.keys(custom.docCert||{}).length} 완료
+                  {BASE_DOCS_CERT.filter((_, i) => docDone["c" + i]).length}/{BASE_DOCS_CERT.length + Object.keys(custom.docCert || {}).length} 완료
                 </span>
               </div>
               <div className="flex gap-3 px-4 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400">
-                <span className="w-5 shrink-0"/><span className="w-5 shrink-0">#</span>
+                <span className="w-5 shrink-0" /><span className="w-5 shrink-0">#</span>
                 <span className="flex-1">서류명</span>
                 <span className="w-14 shrink-0 text-right hidden md:block">마감</span>
                 <span className="w-20 shrink-0 text-right hidden sm:block">담당</span>
                 <span className="w-24 shrink-0 text-right">상태</span>
-                <span className="w-6 shrink-0"/>
+                <span className="w-6 shrink-0" />
               </div>
               <div className="divide-y divide-slate-100">
-                {BASE_DOCS_CERT.map((baseItem,i) => {
+                {BASE_DOCS_CERT.map((baseItem, i) => {
                   const item = mergeEdit("docCert", String(i), baseItem);
-                  const dKey = "c"+i;
-                  const done = docDone[dKey]||false;
-                  const status = docCertStatuses[String(i)]||baseItem.status;
+                  const dKey = "c" + i;
+                  const done = docDone[dKey] || false;
+                  const status = docCertStatuses[String(i)] || baseItem.status;
                   const eKey = `docCert:${i}`;
                   const isEditing = editingKey === eKey;
                   return (
-                    <div key={i} className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${done?"opacity-50 bg-slate-50":""}`}>
-                      <div className="cursor-pointer" onClick={()=>toggleDoc(dKey)}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done?"bg-emerald-500 border-emerald-500":"border-slate-300"}`}>
-                          {done&&<span className="text-white text-[9px] font-bold">✓</span>}
+                    <div key={i} className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${done ? "opacity-50 bg-slate-50" : ""}`}>
+                      <div className="cursor-pointer" onClick={() => toggleDoc(dKey)}>
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                          {done && <span className="text-white text-[9px] font-bold">✓</span>}
                         </div>
                       </div>
                       <span className="text-xs text-slate-400 w-5 shrink-0">{baseItem.no}</span>
                       {isEditing ? (
                         <div className="flex-1">
-                          <EditInline showOwner={true} showDue={true}
-                            onSave={()=>saveEdit("docCert",String(i),false)}
-                            onCancel={()=>setEditingKey(null)} />
+                          <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true} showDue={true}
+                            onSave={() => saveEdit("docCert", String(i), false)}
+                            onCancel={() => setEditingKey(null)} />
                         </div>
                       ) : (
-                        <span className={`flex-1 text-sm ${done?"line-through text-slate-400":"text-slate-700"}`}>{item.name}</span>
+                        <span className={`flex-1 text-sm ${done ? "line-through text-slate-400" : "text-slate-700"}`}>{item.name}</span>
                       )}
-                      {!isEditing&&<>
-                        <span className="text-xs text-slate-400 w-14 shrink-0 text-right hidden md:block">{item.due||baseItem.due}</span>
-                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner||baseItem.owner}</span>
+                      {!isEditing && <>
+                        <span className="text-xs text-slate-400 w-14 shrink-0 text-right hidden md:block">{item.due || baseItem.due}</span>
+                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner || baseItem.owner}</span>
                         <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v=>updDocCert(i,v)} />
+                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v => updDocCert(i, v)} />
                         </div>
                         <div className="w-6 shrink-0 flex justify-end">
-                          <button onClick={e=>{e.stopPropagation();startEdit("docCert",String(i),{...baseItem,...item});}} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                          <button onClick={e => { e.stopPropagation(); startEdit("docCert", String(i), { ...baseItem, ...item }); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
                         </div>
                       </>}
                     </div>
                   );
                 })}
-                {Object.entries(custom.docCert||{}).map(([k,baseItem]) => {
+                {Object.entries(custom.docCert || {}).map(([k, baseItem]) => {
                   const item = mergeEdit("docCert", k, baseItem);
-                  const dKey = "cc"+k;
-                  const done = docDone[dKey]||false;
-                  const status = docCertStatuses[k]||baseItem.status||"수급예정";
+                  const dKey = "cc" + k;
+                  const done = docDone[dKey] || false;
+                  const status = docCertStatuses[k] || baseItem.status || "수급예정";
                   const eKey = `docCert:${k}`;
                   const isEditing = editingKey === eKey;
                   return (
-                    <div key={k} className={`flex items-center gap-3 px-4 py-2.5 bg-slate-50/50 transition-colors ${done?"opacity-50":""}`}>
-                      <div className="cursor-pointer" onClick={()=>toggleDoc(dKey)}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done?"bg-emerald-500 border-emerald-500":"border-slate-300"}`}>
-                          {done&&<span className="text-white text-[9px] font-bold">✓</span>}
+                    <div key={k} className={`flex items-center gap-3 px-4 py-2.5 bg-slate-50/50 transition-colors ${done ? "opacity-50" : ""}`}>
+                      <div className="cursor-pointer" onClick={() => toggleDoc(dKey)}>
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                          {done && <span className="text-white text-[9px] font-bold">✓</span>}
                         </div>
                       </div>
-                      <span className="text-xs text-slate-400 w-5 shrink-0">{item.no||"＋"}</span>
+                      <span className="text-xs text-slate-400 w-5 shrink-0">{item.no || "＋"}</span>
                       {isEditing ? (
                         <div className="flex-1">
-                          <EditInline showOwner={true} showDue={true}
-                            onSave={()=>saveEdit("docCert",k,true)}
-                            onCancel={()=>setEditingKey(null)} />
+                          <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true} showDue={true}
+                            onSave={() => saveEdit("docCert", k, true)}
+                            onCancel={() => setEditingKey(null)} />
                         </div>
                       ) : (
-                        <span className={`flex-1 text-sm ${done?"line-through text-slate-400":"text-slate-700"}`}>{item.name}</span>
+                        <span className={`flex-1 text-sm ${done ? "line-through text-slate-400" : "text-slate-700"}`}>{item.name}</span>
                       )}
-                      {!isEditing&&<>
+                      {!isEditing && <>
                         <span className="text-xs text-slate-400 w-14 shrink-0 text-right hidden md:block">{item.due}</span>
                         <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner}</span>
                         <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v=>{const n={...docCertStatuses,[k]:v};setDocCertStatuses(n);persist({docCertStatuses:n});}} />
+                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v => { const n = { ...docCertStatuses, [k]: v }; setDocCertStatuses(n); persist({ docCertStatuses: n }); }} />
                         </div>
                         <div className="w-6 shrink-0 flex justify-end gap-1">
-                          <button onClick={e=>{e.stopPropagation();startEdit("docCert",k,baseItem);}} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                          <button onClick={e=>{e.stopPropagation();deleteCustom("docCert",k);}} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
+                          <button onClick={e => { e.stopPropagation(); startEdit("docCert", k, baseItem); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                          <button onClick={e => { e.stopPropagation(); deleteCustom("docCert", k); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
                         </div>
                       </>}
                     </div>
@@ -815,11 +814,11 @@ export default function App() {
                 })}
               </div>
               <div className="px-4 pb-3 pt-1">
-                <AddForm section="docCert" options={DOC_STATUS_OPTIONS} showOwner={true} showDue={true} />
+                <AddForm section="docCert" options={DOC_STATUS_OPTIONS} showOwner={true} showDue={true}
+                  addingTo={addingTo} setAddingTo={setAddingTo} newItem={newItem} setNewItem={setNewItem} onAdd={() => addItem("docCert")} />
               </div>
             </div>
 
-            {/* 특부가 재등록 서류 */}
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
               <div className="px-4 py-3 bg-violet-50 border-b border-violet-100 flex items-center justify-between">
                 <div>
@@ -827,89 +826,88 @@ export default function App() {
                   <p className="text-xs text-violet-700 mt-0.5">중앙전파관리소 제출 · 재등록 신청 목표: 9/19~9/20</p>
                 </div>
                 <span className="text-xs font-medium bg-violet-100 text-violet-700 px-2 py-0.5 rounded-full">
-                  {BASE_DOCS_REREG.filter((_,i)=>docDone["r"+i]).length + Object.keys(custom.docRereg||{}).filter(k=>docDone["cr"+k]).length}
-                  /{BASE_DOCS_REREG.length + Object.keys(custom.docRereg||{}).length} 완료
+                  {BASE_DOCS_REREG.filter((_, i) => docDone["r" + i]).length}/{BASE_DOCS_REREG.length + Object.keys(custom.docRereg || {}).length} 완료
                 </span>
               </div>
               <div className="flex gap-3 px-4 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] text-slate-400">
-                <span className="w-5 shrink-0"/><span className="w-5 shrink-0">#</span>
+                <span className="w-5 shrink-0" /><span className="w-5 shrink-0">#</span>
                 <span className="flex-1">서류명</span>
                 <span className="w-14 shrink-0 text-right hidden md:block">마감</span>
                 <span className="w-20 shrink-0 text-right hidden sm:block">담당</span>
                 <span className="w-24 shrink-0 text-right">상태</span>
-                <span className="w-6 shrink-0"/>
+                <span className="w-6 shrink-0" />
               </div>
               <div className="divide-y divide-slate-100">
-                {BASE_DOCS_REREG.map((baseItem,i) => {
+                {BASE_DOCS_REREG.map((baseItem, i) => {
                   const item = mergeEdit("docRereg", String(i), baseItem);
-                  const dKey = "r"+i;
-                  const done = docDone[dKey]||false;
-                  const status = docReregStatuses[String(i)]||baseItem.status;
+                  const dKey = "r" + i;
+                  const done = docDone[dKey] || false;
+                  const status = docReregStatuses[String(i)] || baseItem.status;
                   const eKey = `docRereg:${i}`;
                   const isEditing = editingKey === eKey;
                   return (
-                    <div key={i} className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${done?"opacity-50 bg-slate-50":""}`}>
-                      <div className="cursor-pointer" onClick={()=>toggleDoc(dKey)}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done?"bg-emerald-500 border-emerald-500":"border-slate-300"}`}>
-                          {done&&<span className="text-white text-[9px] font-bold">✓</span>}
+                    <div key={i} className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${done ? "opacity-50 bg-slate-50" : ""}`}>
+                      <div className="cursor-pointer" onClick={() => toggleDoc(dKey)}>
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                          {done && <span className="text-white text-[9px] font-bold">✓</span>}
                         </div>
                       </div>
                       <span className="text-xs text-slate-400 w-5 shrink-0">{baseItem.no}</span>
                       {isEditing ? (
                         <div className="flex-1">
-                          <EditInline showOwner={true} showDue={true}
-                            onSave={()=>saveEdit("docRereg",String(i),false)}
-                            onCancel={()=>setEditingKey(null)} />
+                          <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true} showDue={true}
+                            onSave={() => saveEdit("docRereg", String(i), false)}
+                            onCancel={() => setEditingKey(null)} />
                         </div>
                       ) : (
-                        <span className={`flex-1 text-sm ${done?"line-through text-slate-400":baseItem.status==="리스크"?"text-red-700 font-medium":"text-slate-700"}`}>{item.name}</span>
+                        <span className={`flex-1 text-sm ${done ? "line-through text-slate-400" : baseItem.status === "리스크" ? "text-red-700 font-medium" : "text-slate-700"}`}>{item.name}</span>
                       )}
-                      {!isEditing&&<>
-                        <span className="text-xs text-slate-400 w-14 shrink-0 text-right hidden md:block">{item.due||baseItem.due}</span>
-                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner||baseItem.owner}</span>
+                      {!isEditing && <>
+                        <span className="text-xs text-slate-400 w-14 shrink-0 text-right hidden md:block">{item.due || baseItem.due}</span>
+                        <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner || baseItem.owner}</span>
                         <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v=>updDocRereg(i,v)} />
+                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v => updDocRereg(i, v)} />
                         </div>
                         <div className="w-6 shrink-0 flex justify-end">
-                          <button onClick={e=>{e.stopPropagation();startEdit("docRereg",String(i),{...baseItem,...item});}} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                          <button onClick={e => { e.stopPropagation(); startEdit("docRereg", String(i), { ...baseItem, ...item }); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
                         </div>
                       </>}
                     </div>
                   );
                 })}
-                {Object.entries(custom.docRereg||{}).map(([k,baseItem]) => {
+                {Object.entries(custom.docRereg || {}).map(([k, baseItem]) => {
                   const item = mergeEdit("docRereg", k, baseItem);
-                  const dKey = "cr"+k;
-                  const done = docDone[dKey]||false;
-                  const status = docReregStatuses[k]||baseItem.status||"수급예정";
+                  const dKey = "cr" + k;
+                  const done = docDone[dKey] || false;
+                  const status = docReregStatuses[k] || baseItem.status || "수급예정";
                   const eKey = `docRereg:${k}`;
                   const isEditing = editingKey === eKey;
                   return (
-                    <div key={k} className={`flex items-center gap-3 px-4 py-2.5 bg-slate-50/50 transition-colors ${done?"opacity-50":""}`}>
-                      <div className="cursor-pointer" onClick={()=>toggleDoc(dKey)}>
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done?"bg-emerald-500 border-emerald-500":"border-slate-300"}`}>
-                          {done&&<span className="text-white text-[9px] font-bold">✓</span>}
+                    <div key={k} className={`flex items-center gap-3 px-4 py-2.5 bg-slate-50/50 transition-colors ${done ? "opacity-50" : ""}`}>
+                      <div className="cursor-pointer" onClick={() => toggleDoc(dKey)}>
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                          {done && <span className="text-white text-[9px] font-bold">✓</span>}
                         </div>
                       </div>
-                      <span className="text-xs text-slate-400 w-5 shrink-0">{item.no||"＋"}</span>
+                      <span className="text-xs text-slate-400 w-5 shrink-0">{item.no || "＋"}</span>
                       {isEditing ? (
                         <div className="flex-1">
-                          <EditInline showOwner={true} showDue={true}
-                            onSave={()=>saveEdit("docRereg",k,true)}
-                            onCancel={()=>setEditingKey(null)} />
+                          <EditInline editForm={editForm} setEditForm={setEditForm} showOwner={true} showDue={true}
+                            onSave={() => saveEdit("docRereg", k, true)}
+                            onCancel={() => setEditingKey(null)} />
                         </div>
                       ) : (
-                        <span className={`flex-1 text-sm ${done?"line-through text-slate-400":"text-slate-700"}`}>{item.name}</span>
+                        <span className={`flex-1 text-sm ${done ? "line-through text-slate-400" : "text-slate-700"}`}>{item.name}</span>
                       )}
-                      {!isEditing&&<>
+                      {!isEditing && <>
                         <span className="text-xs text-slate-400 w-14 shrink-0 text-right hidden md:block">{item.due}</span>
                         <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner}</span>
                         <div className="w-24 shrink-0 flex justify-end">
-                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v=>{const n={...docReregStatuses,[k]:v};setDocReregStatuses(n);persist({docReregStatuses:n});}} />
+                          <StatusSelect value={status} options={DOC_STATUS_OPTIONS} styleMap={DOC_STATUS_STYLE} onChange={v => { const n = { ...docReregStatuses, [k]: v }; setDocReregStatuses(n); persist({ docReregStatuses: n }); }} />
                         </div>
                         <div className="w-6 shrink-0 flex justify-end gap-1">
-                          <button onClick={e=>{e.stopPropagation();startEdit("docRereg",k,baseItem);}} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
-                          <button onClick={e=>{e.stopPropagation();deleteCustom("docRereg",k);}} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
+                          <button onClick={e => { e.stopPropagation(); startEdit("docRereg", k, baseItem); }} className="text-slate-300 hover:text-blue-400 text-xs">✏️</button>
+                          <button onClick={e => { e.stopPropagation(); deleteCustom("docRereg", k); }} className="text-slate-300 hover:text-red-400 text-xs">🗑️</button>
                         </div>
                       </>}
                     </div>
@@ -917,7 +915,8 @@ export default function App() {
                 })}
               </div>
               <div className="px-4 pb-3 pt-1">
-                <AddForm section="docRereg" options={DOC_STATUS_OPTIONS} showOwner={true} showDue={true} />
+                <AddForm section="docRereg" options={DOC_STATUS_OPTIONS} showOwner={true} showDue={true}
+                  addingTo={addingTo} setAddingTo={setAddingTo} newItem={newItem} setNewItem={setNewItem} onAdd={() => addItem("docRereg")} />
               </div>
             </div>
           </div>
