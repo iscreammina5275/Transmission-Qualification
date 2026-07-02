@@ -3,9 +3,10 @@ import { db, isConfigured } from "./firebase";
 import { ref, onValue, update } from "firebase/database";
 
 // ─── 상태 옵션 ────────────────────────────────────────────
-const DEV_STATUS_OPTIONS = ["기획필요","개발필요","기획전달예정","소명예정","증빙필요","완료"];
+const DEV_STATUS_OPTIONS = ["기획필요","개발필요","기획전달예정","개발중","테스트","서류 작성중","소명예정","증빙필요","완료"];
 const EXT_STATUS_OPTIONS = ["미문의","답변대기","긍정회신","리스크","완료"];
 const DOC_STATUS_OPTIONS = ["수급예정","수정필요","소명예정","증빙필요","외부문의","리스크","-","완료"];
+const OWNER_OPTIONS = ["기획","개발","기획+개발","개발+기획","기획(인사)","기획(재무)","기획(HR)","외부"];
 
 // ─── 기본 데이터 ──────────────────────────────────────────
 const BASE_DEV_P0 = [
@@ -66,6 +67,8 @@ const STATUS_STYLE = {
   "기획필요":"bg-red-100 text-red-700", "개발필요":"bg-red-100 text-red-700",
   "기획전달예정":"bg-amber-100 text-amber-700", "소명예정":"bg-blue-100 text-blue-700",
   "증빙필요":"bg-violet-100 text-violet-700", "완료":"bg-emerald-100 text-emerald-700",
+  "개발중":"bg-indigo-100 text-indigo-700", "테스트":"bg-cyan-100 text-cyan-700",
+  "서류 작성중":"bg-teal-100 text-teal-700",
 };
 const DOC_STATUS_STYLE = {
   "수급예정":"bg-slate-100 text-slate-500", "수정필요":"bg-amber-100 text-amber-700",
@@ -89,6 +92,12 @@ export default function App() {
 
   const [tab, setTab] = useState("dev");
   const [devFilter, setDevFilter] = useState("P0");
+
+  // 담당자 (selectbox)
+  const [devOwners, setDevOwners] = useState({
+    ...Object.fromEntries([...BASE_DEV_P0,...BASE_DEV_P1,...BASE_DEV_P2].map(i=>[i.id,i.owner])),
+    ...(saved.devOwners||{})
+  });
 
   // 상태값 (selectbox)
   const [devStatuses, setDevStatuses] = useState({
@@ -114,7 +123,9 @@ export default function App() {
   const [docDone, setDocDone] = useState(saved.docDone||{});
 
   // 메모 (탭별)
-  const [memos, setMemos] = useState({ dev:"", ext:"", docs:"", ...(saved.memos||{}) });
+  const [memos, setMemos] = useState({ dev:"", ext:"", docs:"", extAction:"KTOA API 스웨거 원문 확인 후 snb.ktoa.or.kr 문의 진행 (DEV-24 P0)", ...(saved.memos||{}) });
+  const [extActionEdit, setExtActionEdit] = useState(false);
+  const [extActionTemp, setExtActionTemp] = useState("");
 
   // 커스텀 항목 (추가된 항목들)
   const [custom, setCustom] = useState({
@@ -161,10 +172,16 @@ export default function App() {
 
   // 저장 (localStorage + Firebase)
   const persist = (updates) => {
-    const full = { devStatuses, extStatuses, docCertStatuses, docReregStatuses, taskDone, extDone, docDone, memos, custom, edits, ...updates };
+    const full = { devStatuses, extStatuses, docCertStatuses, docReregStatuses, taskDone, extDone, docDone, memos, custom, edits, devOwners, ...updates };
     localStorage.setItem(LS_KEY, JSON.stringify(full));
     if (isConfigured && db) update(ref(db,"wbs"), updates).catch(console.error);
   };
+
+  // 담당자 핸들러
+  const updDevOwner    = (id,v) => { const n={...devOwners,[id]:v};         setDevOwners(n);         persist({devOwners:n}); };
+
+  // 외부확인 액션 저장
+  const saveExtAction  = () => { const n={...memos,extAction:extActionTemp}; setMemos(n); setExtActionEdit(false); persist({memos:n}); };
 
   // 상태 핸들러
   const updDevStatus   = (id,v) => { const n={...devStatuses,[id]:v};       setDevStatuses(n);       persist({devStatuses:n}); };
@@ -362,13 +379,17 @@ export default function App() {
             })}
           </div>
 
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex items-center gap-4 flex-wrap">
             <a href="https://docs.google.com/spreadsheets/d/1alwzM9aqT8uUr7EIkLfIb07sEsVJb-F8hqKVrUEwT5I/edit"
               target="_blank" rel="noreferrer"
               className="text-[11px] text-slate-400 hover:text-white underline flex items-center gap-1">
-              📊 전송자격인증_특부가재등록_WBS (Google Sheets)
+              📊 전송자격인증_특부가재등록_WBS
             </a>
-            <span className="text-slate-600 text-[10px]">← WBS 전체 관리는 기존 스프레드시트 유지</span>
+            <a href="https://www.figma.com/design/KevxXOvW4YH6cJftaJdVt9/26%EB%85%84_%EC%A0%84%EC%86%A1%EC%9E%90%EA%B2%A9%EC%9D%B8%EC%A6%9D%EC%8B%AC%EC%82%AC-%ED%8A%B9%EB%B6%80%EA%B0%80?node-id=135-8488&t=43fr5t2sQRZizBib-4"
+              target="_blank" rel="noreferrer"
+              className="text-[11px] text-slate-400 hover:text-white underline flex items-center gap-1">
+              🎨 전송자격인증 기획서 (Figma)
+            </a>
           </div>
         </div>
       </header>
@@ -486,7 +507,14 @@ export default function App() {
                       </div>
                     )}
                     {!isEditing&&<>
-                      <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner}</span>
+                      <select
+                        value={devOwners[baseItem.id]||item.owner}
+                        onChange={e=>{e.stopPropagation();updDevOwner(baseItem.id,e.target.value);}}
+                        onClick={e=>e.stopPropagation()}
+                        className="text-xs text-slate-500 w-24 shrink-0 hidden sm:block border border-slate-200 rounded px-1 py-0.5 bg-white cursor-pointer focus:outline-none focus:border-blue-400"
+                      >
+                        {OWNER_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}
+                      </select>
                       <div className="w-24 shrink-0 flex justify-end">
                         <StatusSelect value={status} options={DEV_STATUS_OPTIONS} styleMap={STATUS_STYLE} onChange={v=>updDevStatus(baseItem.id,v)} />
                       </div>
@@ -525,7 +553,14 @@ export default function App() {
                       </div>
                     )}
                     {!isEditing&&<>
-                      <span className="text-xs text-slate-400 w-20 shrink-0 text-right hidden sm:block">{item.owner}</span>
+                      <select
+                        value={devOwners[baseItem.id]||item.owner||"개발"}
+                        onChange={e=>{e.stopPropagation();updDevOwner(baseItem.id,e.target.value);}}
+                        onClick={e=>e.stopPropagation()}
+                        className="text-xs text-slate-500 w-24 shrink-0 hidden sm:block border border-slate-200 rounded px-1 py-0.5 bg-white cursor-pointer focus:outline-none focus:border-blue-400"
+                      >
+                        {OWNER_OPTIONS.map(o=><option key={o} value={o}>{o}</option>)}
+                      </select>
                       <div className="w-24 shrink-0 flex justify-end">
                         <StatusSelect value={status} options={DEV_STATUS_OPTIONS} styleMap={STATUS_STYLE} onChange={v=>updDevStatus(baseItem.id,v)} />
                       </div>
@@ -545,8 +580,24 @@ export default function App() {
         {/* ── 외부 확인 현황 탭 ── */}
         {tab === "ext" && (
           <div className="space-y-3">
-            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-              <strong>이번 주 액션:</strong> KTOA API 스웨거 원문 확인 후 snb.ktoa.or.kr 문의 진행 (DEV-24 P0)
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800 flex items-center gap-3">
+              {extActionEdit ? (
+                <>
+                  <input autoFocus value={extActionTemp}
+                    onChange={e=>setExtActionTemp(e.target.value)}
+                    onKeyDown={e=>e.key==="Enter"&&saveExtAction()}
+                    className="flex-1 bg-transparent border-b border-amber-400 focus:outline-none text-sm text-amber-900 placeholder-amber-400"
+                    placeholder="이번 주 액션 메시지 입력"
+                  />
+                  <button onClick={saveExtAction} className="text-xs bg-amber-600 text-white px-2 py-0.5 rounded shrink-0">저장</button>
+                  <button onClick={()=>setExtActionEdit(false)} className="text-xs text-amber-600 shrink-0">취소</button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1"><strong>이번 주 액션:</strong> {memos.extAction}</span>
+                  <button onClick={()=>{setExtActionTemp(memos.extAction);setExtActionEdit(true);}} className="text-xs text-amber-600 border border-amber-300 px-2 py-0.5 rounded hover:bg-amber-100 shrink-0">✏️</button>
+                </>
+              )}
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -874,7 +925,7 @@ export default function App() {
       </main>
 
       <footer className="max-w-4xl mx-auto px-4 pb-8 pt-2 text-center text-[10px] text-slate-400">
-        하이클래스 서비스기획팀 · 2026.06.22 기준 · 법정 데드라인 2026.10.27 · WBS 전체는 Google Sheets에서 관리
+        하이클래스실 사업팀 김미나 · 법정 데드라인 2026.10.27
       </footer>
     </div>
   );
